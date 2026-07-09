@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>First Street WiFi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <div class="mark">FS</div>
+      <div>
+        <h1>First Street WiFi</h1>
+        <div class="sub">Fast, prepaid internet · Harare</div>
+      </div>
+    </div>
+
+    <p class="eyebrow">Get online</p>
+    <h2>Choose your pass</h2>
+    <p class="lead">Pay with EcoCash or OneMoney. Your voucher works instantly.</p>
+
+    <form method="POST" action="/buy" id="buyForm">
+      <input type="hidden" name="packageId" id="packageId" required>
+      <div class="packages">
+        <% packages.forEach(function(p){ %>
+          <div class="pkg" data-id="<%= p.id %>" onclick="selectPkg(this)">
+            <div>
+              <div class="name"><%= p.name %></div>
+              <div class="blurb"><%= p.blurb %></div>
+            </div>
+            <div class="price">$<%= p.price.toFixed(2) %></div>
+          </div>
+        <% }); %>
+      </div>
+
+      <label class="field">
+        <span>Mobile number</span>
+        <input type="tel" name="phone" placeholder="0771 234 567" required>
+      </label>
+
+      <label class="field">
+        <span>Email (optional — for receipt)</span>
+        <input type="email" name="email" placeholder="you@example.com">
+      </label>
+
+      <label class="field">
+        <span>Pay with</span>
+        <select name="method">
+          <option value="ecocash">EcoCash (Econet)</option>
+          <option value="onemoney">OneMoney (NetOne)</option>
+        </select>
+      </label>
+
+      <button type="submit" class="btn" id="buyBtn" disabled>Buy pass</button>
+    </form>
+
+    <div class="divider">Already have a voucher?</div>
+
+    <form method="POST" action="/login">
+      <label class="field">
+        <span>Voucher code</span>
+        <input type="text" name="voucher" placeholder="XXXX-XXXX" autocapitalize="characters" required>
+      </label>
+      <button type="submit" class="btn clay">Connect</button>
+    </form>
+
+    <p class="foot">First Street WiFi · Powered by Omada &amp; Paynow</p>
+  </div>
+
+  <script>
+    function selectPkg(el) {
+      document.querySelectorAll('.pkg').forEach(p => p.classList.remove('selected'));
+      el.classList.add('selected');
+      document.getElementById('packageId').value = el.dataset.id;
+      document.getElementById('buyBtn').disabled = false;
+    }
+  </script>
+</body>
+</html>

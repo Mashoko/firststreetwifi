@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin · First Street WiFi</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>.wrap{max-width:760px}</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <div class="mark">FS</div>
+      <div><h1>First Street WiFi</h1><div class="sub">Reports &amp; analytics</div></div>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat"><div class="n">$<%= Number(totals.revenue||0).toFixed(2) %></div><div class="l">Revenue</div></div>
+      <div class="stat"><div class="n"><%= totals.paid_tx||0 %></div><div class="l">Paid vouchers</div></div>
+      <div class="stat"><div class="n"><%= totals.total_tx||0 %></div><div class="l">Total attempts</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <p class="eyebrow">By package</p>
+      <table>
+        <thead><tr><th>Package</th><th>Sold</th><th>Revenue</th></tr></thead>
+        <tbody>
+          <% byPackage.forEach(function(r){ %>
+            <tr><td><%= r.package_id %></td><td><%= r.count %></td><td>$<%= Number(r.revenue).toFixed(2) %></td></tr>
+          <% }); %>
+          <% if(byPackage.length===0){ %><tr><td colspan="3" style="color:var(--muted)">No sales yet.</td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <p class="eyebrow">Recent transactions</p>
+      <table>
+        <thead><tr><th>Ref</th><th>Pkg</th><th>Amt</th><th>Phone</th><th>Status</th><th>Voucher</th></tr></thead>
+        <tbody>
+          <% recent.forEach(function(t){ %>
+            <tr>
+              <td style="font-size:11px"><%= t.reference %></td>
+              <td><%= t.package_id %></td>
+              <td>$<%= Number(t.amount).toFixed(2) %></td>
+              <td><%= t.phone || '—' %></td>
+              <td><span class="badge <%= t.status %>"><%= t.status %></span></td>
+              <td style="font-family:monospace"><%= t.voucher_code || '—' %></td>
+            </tr>
+          <% }); %>
+          <% if(recent.length===0){ %><tr><td colspan="6" style="color:var(--muted)">No transactions yet.</td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

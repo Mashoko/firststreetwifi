@@ -1,0 +1,20 @@
+{
+  "name": "firststreetwifi",
+  "version": "1.0.0",
+  "description": "Hotspot billing portal for Omada + Paynow (Zimbabwe)",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "init-db": "node src/db/init.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "express": "^4.21.0",
+    "express-session": "^1.18.1",
+    "paynow": "^1.0.1"
+  }
+}

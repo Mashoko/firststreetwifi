@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connected · First Street WiFi</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <div class="mark">FS</div>
+      <div><h1>First Street WiFi</h1><div class="sub">You're online</div></div>
+    </div>
+    <div class="card center">
+      <div class="big-icon">✅</div>
+      <h2>Connected!</h2>
+      <p class="lead"><%= pkg ? pkg.name : 'Access' %> active for
+        <% var h = Math.floor(minutes/60); var d = Math.floor(h/24); %>
+        <strong><%= d >= 1 ? d + ' day' + (d>1?'s':'') : h + ' hour' + (h>1?'s':'') %></strong>.
+      </p>
+      <p class="note">Enjoy your internet. This tab can be closed.</p>
+    </div>
+    <p class="foot">First Street WiFi · Harare</p>
+  </div>
+</body>
+</html>
