@@ -25,4 +25,9 @@ export const config = {
     operatorPass: process.env.OMADA_OPERATOR_PASS || '',
     verifyTls: bool(process.env.OMADA_VERIFY_TLS, false),
   },
+
+  admin: {
+    user: process.env.ADMIN_USER || '',
+    password: process.env.ADMIN_PASSWORD || '',
+  },
 };
