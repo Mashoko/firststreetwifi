@@ -1,9 +1,56 @@
+import crypto from 'crypto';
 import express from 'express';
+import { config } from '../config.js';
 import { db } from '../db/index.js';
 
 export const adminRouter = express.Router();
 
-adminRouter.get('/', (req, res) => {
+function safeCompare(a, b) {
+  const hashA = crypto.createHash('sha256').update(String(a)).digest();
+  const hashB = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(hashA, hashB);
+}
+
+function adminConfigured() {
+  return Boolean(config.admin.user && config.admin.password);
+}
+
+function notConfigured(res) {
+  return res.status(503).render('error', {
+    message: 'Admin login is not configured. Set ADMIN_USER and ADMIN_PASSWORD in .env.',
+  });
+}
+
+function requireAdminAuth(req, res, next) {
+  if (!adminConfigured()) return notConfigured(res);
+  if (req.session.isAdmin) return next();
+  return res.redirect('/admin/login');
+}
+
+adminRouter.get('/login', (req, res) => {
+  if (!adminConfigured()) return notConfigured(res);
+  if (req.session.isAdmin) return res.redirect('/admin');
+  res.render('admin-login', { error: null });
+});
+
+adminRouter.post('/login', express.urlencoded({ extended: true }), (req, res) => {
+  if (!adminConfigured()) return notConfigured(res);
+  const { username, password } = req.body;
+  const validUser = safeCompare(username || '', config.admin.user);
+  const validPass = safeCompare(password || '', config.admin.password);
+  if (!validUser || !validPass) {
+    return res.status(401).render('admin-login', { error: 'Invalid username or password.' });
+  }
+  req.session.isAdmin = true;
+  res.redirect('/admin');
+});
+
+adminRouter.get('/logout', (req, res) => {
+  req.session.isAdmin = false;
+  res.redirect('/admin/login');
+});
+
+adminRouter.get('/', requireAdminAuth, (req, res) => {
   const totals = db.prepare(`
     SELECT
       COUNT(*)                                        AS total_tx,

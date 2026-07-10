@@ -81,7 +81,7 @@ h2 { font-size: 24px; letter-spacing: -0.02em; margin-bottom: 6px; }
 /* Forms */
 label.field { display: block; margin-bottom: 14px; }
 label.field span { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
-input[type=text], input[type=tel], input[type=email], select {
+input[type=text], input[type=tel], input[type=email], input[type=password], select {
   width: 100%; padding: 13px 14px;
   border: 1.5px solid var(--line); border-radius: 10px;
   font-size: 15px; font-family: inherit; background: #fff;
