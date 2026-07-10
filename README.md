@@ -98,4 +98,6 @@ Only `src/db/index.js` and the query calls need changing. The schema is standard
 
 - Card payments (Stripe/Paystack) can be added as another method alongside mobile money.
 - SMS/email receipts: hook into `finalizePaidTransaction()` in `src/routes/pay.js`.
-- Add auth to `/admin` before deploying publicly (currently open).
+- `/admin` now requires login (`ADMIN_USER`/`ADMIN_PASSWORD` in `.env`). Before
+  a public deploy: serve over HTTPS and set `cookie.secure: true` in
+  `src/server.js` so the admin session cookie isn't sent in cleartext.
