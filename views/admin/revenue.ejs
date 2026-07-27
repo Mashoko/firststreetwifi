@@ -1,0 +1,60 @@
+<%- include('../partials/admin-head', { activePage: 'revenue', title: 'Revenue' }) %>
+
+<%- include('../partials/filter-row', { basePath: '/admin/revenue', range: range.preset, packageId: packageId, showPackageFilter: true, packages: packages }) %>
+
+<div class="kpi-row">
+  <div class="glass-card kpi-tile"><div class="label">Today</div><div class="value">$<%= Number(overview.today).toFixed(2) %></div></div>
+  <div class="glass-card kpi-tile"><div class="label">This Week</div><div class="value">$<%= Number(overview.week).toFixed(2) %></div></div>
+  <div class="glass-card kpi-tile"><div class="label">This Month</div><div class="value">$<%= Number(overview.month).toFixed(2) %></div></div>
+  <div class="glass-card kpi-tile"><div class="label">This Year</div><div class="value">$<%= Number(overview.year).toFixed(2) %></div></div>
+</div>
+
+<div class="chart-row">
+  <div class="glass-card chart-card" style="flex:2">
+    <h3>Revenue Trend</h3>
+    <%- lineChart(trend.map(function(r) { return { label: r.day, value: r.revenue, displayValue: '$' + Number(r.revenue).toFixed(2) }; })) %>
+  </div>
+  <div class="glass-card chart-card">
+    <h3>Revenue by Package</h3>
+    <%- horizontalBarChart(byPackage.map(function(p) { return { label: p.package_id, value: p.revenue, displayValue: '$' + Number(p.revenue).toFixed(2) }; })) %>
+  </div>
+</div>
+
+<div class="chart-row">
+  <div class="glass-card chart-card">
+    <h3>Transaction Outcomes</h3>
+    <%- horizontalBarChart(outcomes.map(function(o) { return { label: o.status, value: o.count, displayValue: o.count }; })) %>
+  </div>
+</div>
+
+<div class="chart-row">
+  <div class="glass-card chart-card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3 style="margin:0">Recent Payments</h3>
+      <a href="/admin/revenue/export.csv?range=<%= range.preset %><%= packageId ? '&package=' + encodeURIComponent(packageId) : '' %>" style="font-size:11px;color:var(--ink-secondary)">Export CSV</a>
+    </div>
+    <table class="dash-table">
+      <thead><tr><th>Ref</th><th>Package</th><th>Amount</th><th>Phone</th><th>Voucher</th></tr></thead>
+      <tbody>
+        <% recent.forEach(function(t) { %>
+          <tr><td style="font-size:11px"><%= t.reference %></td><td><%= t.package_id %></td><td>$<%= Number(t.amount).toFixed(2) %></td><td><%= t.phone || '—' %></td><td style="font-family:monospace"><%= t.voucher_code || '—' %></td></tr>
+        <% }); %>
+        <% if (recent.length === 0) { %><tr><td colspan="5" style="color:var(--ink-muted)">No payments in this range.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+  <div class="glass-card chart-card">
+    <h3>Failed Transactions</h3>
+    <table class="dash-table">
+      <thead><tr><th>Ref</th><th>Package</th><th>Amount</th><th>Status</th></tr></thead>
+      <tbody>
+        <% failed.forEach(function(t) { %>
+          <tr><td style="font-size:11px"><%= t.reference %></td><td><%= t.package_id %></td><td>$<%= Number(t.amount).toFixed(2) %></td><td><%= t.status %></td></tr>
+        <% }); %>
+        <% if (failed.length === 0) { %><tr><td colspan="4" style="color:var(--ink-muted)">No failures in this range.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../partials/admin-foot') %>
