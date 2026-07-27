@@ -97,3 +97,84 @@ export function parseClientInfo(query) {
     vid: query.vid || '',
   };
 }
+
+// Resolved once per process from the site *name* (config.omada.site) to the
+// internal site key the clients-list endpoint requires. Not persisted; a
+// process restart re-resolves it, which also picks up a site rename in Omada.
+let cachedSiteKey = null;
+
+async function resolveSiteKey(cookie, token) {
+  if (cachedSiteKey) return cachedSiteKey;
+
+  const url = `${config.omada.baseUrl}/${config.omada.controllerId}/api/v2/current/sites?currentPage=1&currentPageSize=100`;
+  const res = await fetch(url, {
+    agent,
+    headers: {
+      'Content-Type': 'application/json',
+      'Csrf-Token': token,
+      Cookie: cookie,
+    },
+  });
+
+  const data = await res.json();
+  if (!data || data.errorCode !== 0) {
+    throw new Error(`Omada site list failed: ${JSON.stringify(data)}`);
+  }
+
+  const list = data.result?.data || [];
+  const match = list.find((s) => s.name === config.omada.site);
+  if (!match) {
+    throw new Error(`Omada site not found: "${config.omada.site}"`);
+  }
+
+  cachedSiteKey = match.id;
+  return cachedSiteKey;
+}
+
+/**
+ * Fetches currently-active clients on the configured site.
+ * In MOCK_MODE, returns fixture data with no network calls.
+ */
+export async function getConnectedClients() {
+  if (config.mockMode) {
+    const now = Date.now();
+    return {
+      total: 3,
+      clients: [
+        { mac: 'AA:BB:CC:00:00:01', name: 'Guest-Phone-1', ip: '192.168.1.101', ssid: 'FirstStreet', apName: 'Lobby-AP', connectedAt: new Date(now - 15 * 60000).toISOString() },
+        { mac: 'AA:BB:CC:00:00:02', name: 'Guest-Phone-2', ip: '192.168.1.102', ssid: 'FirstStreet', apName: 'Lobby-AP', connectedAt: new Date(now - 42 * 60000).toISOString() },
+        { mac: 'AA:BB:CC:00:00:03', name: 'Guest-Laptop', ip: '192.168.1.103', ssid: 'FirstStreet', apName: 'Lobby-AP', connectedAt: new Date(now - 3 * 60000).toISOString() },
+      ],
+    };
+  }
+
+  const { token, cookie } = await omadaLogin();
+  const siteKey = await resolveSiteKey(cookie, token);
+
+  const url = `${config.omada.baseUrl}/${config.omada.controllerId}/api/v2/sites/${siteKey}/clients?currentPage=1&currentPageSize=100&filters.active=true`;
+  const res = await fetch(url, {
+    agent,
+    headers: {
+      'Content-Type': 'application/json',
+      'Csrf-Token': token,
+      Cookie: cookie,
+    },
+  });
+
+  const data = await res.json();
+  if (!data || data.errorCode !== 0) {
+    throw new Error(`Omada client list failed: ${JSON.stringify(data)}`);
+  }
+
+  const rows = data.result?.data || [];
+  const clients = rows.map((c) => ({
+    mac: c.mac || c.clientMac || '',
+    name: c.name || c.hostName || 'Unknown device',
+    ip: c.ip || c.wirelessClient?.ip || '',
+    ssid: c.ssid || c.wirelessClient?.ssid || '',
+    apName: c.apName || '',
+    connectedAt: c.connectAt || c.lastSeen || null,
+  }));
+
+  return { total: data.result?.totalRows ?? clients.length, clients };
+}
