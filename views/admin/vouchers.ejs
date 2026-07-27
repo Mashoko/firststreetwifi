@@ -1,0 +1,39 @@
+<%- include('../partials/admin-head', { activePage: 'vouchers', title: 'Vouchers' }) %>
+
+<%- include('../partials/filter-row', { basePath: '/admin/vouchers', range: range.preset, packageId: packageId, showPackageFilter: true, packages: packages }) %>
+
+<div class="kpi-row">
+  <div class="glass-card kpi-tile"><div class="label">Sold</div><div class="value"><%= lifecycle.sold %></div></div>
+  <div class="glass-card kpi-tile"><div class="label">Active</div><div class="value"><%= lifecycle.active %></div></div>
+  <div class="glass-card kpi-tile"><div class="label">Unused</div><div class="value"><%= lifecycle.unused %></div></div>
+  <div class="glass-card kpi-tile"><div class="label">Expired</div><div class="value"><%= lifecycle.expired %></div></div>
+</div>
+
+<div class="chart-row">
+  <div class="glass-card chart-card" style="flex:1">
+    <h3>Voucher Sales Over Time</h3>
+    <%- lineChart(salesTrend.map(function(s) { return { label: s.day, value: s.count, displayValue: s.count }; })) %>
+  </div>
+  <div class="glass-card chart-card">
+    <h3>Package Popularity</h3>
+    <%- horizontalBarChart(popularity.map(function(p) { return { label: p.package_id, value: p.count, displayValue: p.count }; })) %>
+  </div>
+</div>
+
+<div class="glass-card">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h3 style="margin:0">Latest Vouchers</h3>
+    <a href="/admin/vouchers/export.csv?range=<%= range.preset %><%= packageId ? '&package=' + encodeURIComponent(packageId) : '' %>" style="font-size:11px;color:var(--ink-secondary)">Export CSV</a>
+  </div>
+  <table class="dash-table">
+    <thead><tr><th>Code</th><th>Package</th><th>Status</th><th>Expires</th><th>Created</th></tr></thead>
+    <tbody>
+      <% latest.forEach(function(v) { %>
+        <tr><td style="font-family:monospace"><%= v.code %></td><td><%= v.package_id %></td><td><%= v.status %></td><td><%= v.expires_at || '—' %></td><td><%= v.created_at %></td></tr>
+      <% }); %>
+      <% if (latest.length === 0) { %><tr><td colspan="5" style="color:var(--ink-muted)">No vouchers in this range.</td></tr><% } %>
+    </tbody>
+  </table>
+</div>
+
+<%- include('../partials/admin-foot') %>
