@@ -2,6 +2,7 @@ import express from 'express';
 import { config } from '../../config.js';
 import { safeCompare, adminConfigured, notConfigured, requireAdminAuth } from './auth.js';
 import { overviewRouter } from './overview.js';
+import { subscribersRouter } from './subscribers.js';
 
 export const adminRouter = express.Router();
 
@@ -32,3 +33,4 @@ adminRouter.get('/logout', (req, res) => {
 adminRouter.use(requireAdminAuth);
 
 adminRouter.use('/', overviewRouter);
+adminRouter.use('/subscribers', subscribersRouter);

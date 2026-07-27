@@ -1,0 +1,64 @@
+<%- include('../partials/admin-head', { activePage: 'subscribers', title: 'Subscribers' }) %>
+
+<%- include('../partials/filter-row', { basePath: '/admin/subscribers', range: range.preset, packageId: '', showPackageFilter: false, packages: [] }) %>
+
+<div class="kpi-row">
+  <div class="glass-card kpi-tile"><div class="label">Total Subscribers</div><div class="value"><%= overview.total %></div></div>
+  <div class="glass-card kpi-tile"><div class="label">Active Subscribers</div><div class="value"><%= overview.active %></div></div>
+  <div class="glass-card kpi-tile">
+    <div class="label">New This Month</div>
+    <div class="value"><%= overview.newThisMonth %></div>
+    <div class="delta <%= overview.growthPct >= 0 ? 'up' : 'down' %>">
+      <%= overview.growthPct >= 0 ? '▲' : '▼' %> <%= Math.abs(overview.growthPct).toFixed(1) %>% vs last month
+    </div>
+  </div>
+</div>
+
+<div class="chart-row">
+  <div class="glass-card chart-card" style="flex:1">
+    <h3>Daily Subscriber Growth</h3>
+    <%- lineChart(growth.map(function(g) { return { label: g.day, value: g.newSubscribers, displayValue: g.newSubscribers }; })) %>
+  </div>
+</div>
+
+<div class="chart-row">
+  <div class="glass-card chart-card">
+    <h3>Newest Subscribers</h3>
+    <table class="dash-table">
+      <thead><tr><th>Phone</th><th>First Purchase</th><th>Purchases</th><th>Spent</th></tr></thead>
+      <tbody>
+        <% newest.forEach(function(s) { %>
+          <tr><td><%= s.phone %></td><td><%= s.first_purchase %></td><td><%= s.purchases %></td><td>$<%= Number(s.totalSpent).toFixed(2) %></td></tr>
+        <% }); %>
+        <% if (newest.length === 0) { %><tr><td colspan="4" style="color:var(--ink-muted)">No subscribers yet.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+  <div class="glass-card chart-card">
+    <h3>Top Spending Customers</h3>
+    <table class="dash-table">
+      <thead><tr><th>Phone</th><th>Purchases</th><th>Spent</th></tr></thead>
+      <tbody>
+        <% topSpenders.forEach(function(s) { %>
+          <tr><td><%= s.phone %></td><td><%= s.purchases %></td><td>$<%= Number(s.totalSpent).toFixed(2) %></td></tr>
+        <% }); %>
+        <% if (topSpenders.length === 0) { %><tr><td colspan="3" style="color:var(--ink-muted)">No data yet.</td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="glass-card">
+  <h3>Lapsed / At-Risk Customers</h3>
+  <table class="dash-table">
+    <thead><tr><th>Phone</th><th>Last Purchase</th><th>Days Since</th></tr></thead>
+    <tbody>
+      <% lapsed.forEach(function(s) { %>
+        <tr><td><%= s.phone %></td><td><%= s.lastPurchase %></td><td><%= Math.floor(s.daysSince) %></td></tr>
+      <% }); %>
+      <% if (lapsed.length === 0) { %><tr><td colspan="3" style="color:var(--ink-muted)">No lapsed customers.</td></tr><% } %>
+    </tbody>
+  </table>
+</div>
+
+<%- include('../partials/admin-foot') %>

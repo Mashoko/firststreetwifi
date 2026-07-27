@@ -1,0 +1,18 @@
+<div class="filter-row">
+  <% ['today','7d','30d','90d'].forEach(function(r) { %>
+    <a href="<%= basePath %>?range=<%= r %><%= packageId ? '&package=' + packageId : '' %>" class="<%= range === r ? 'active' : '' %>">
+      <%= ({ today: 'Today', '7d': '7 Days', '30d': '30 Days', '90d': '90 Days' })[r] %>
+    </a>
+  <% }); %>
+  <% if (showPackageFilter) { %>
+    <form method="GET" action="<%= basePath %>" style="display:inline">
+      <input type="hidden" name="range" value="<%= range %>">
+      <select name="package" onchange="this.form.submit()">
+        <option value="">All packages</option>
+        <% packages.forEach(function(p) { %>
+          <option value="<%= p %>" <%= packageId === p ? 'selected' : '' %>><%= p %></option>
+        <% }); %>
+      </select>
+    </form>
+  <% } %>
+</div>
