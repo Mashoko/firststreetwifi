@@ -106,6 +106,20 @@ calls; run `npm run check-clients` to see the shape.
 2. Set up the Hotspot Operator account and External Portal exactly as
    described above, pointing `OMADA_BASE_URL` / `OMADA_CONTROLLER_ID` at the
    physical controller's local address, and set `MOCK_MODE=false`.
+   ⚠️ **`OMADA_VERIFY_TLS=false` does not currently work.** Node's native
+   `fetch` (undici) silently ignores the `https.Agent` option
+   `src/services/omada.js` passes to it, so every call to a controller with
+   a self-signed cert (the default on an OC200/OC300) will throw
+   `DEPTH_ZERO_SELF_SIGNED_CERT` regardless of that setting. Workaround for
+   local testing only: prefix the command with
+   `NODE_TLS_REJECT_UNAUTHORIZED=0`, e.g.
+   `NODE_TLS_REJECT_UNAUTHORIZED=0 npm run check-clients` (same prefix for
+   `npm start` when going live). This disables TLS verification for the
+   *entire* Node process, not just Omada calls — insecure, fine for a quick
+   local check, not something to run in production. A real fix (switching
+   to undici's `dispatcher` option, or importing the controller's cert into
+   the OS trust store) is out of scope for this branch and should be
+   tracked separately before relying on this against a live controller.
 3. Buy a voucher through the real portal end-to-end and confirm the paying
    client actually gets network access (this is the first real-hardware use
    of the existing `authorizeClient()` flow — no code change is expected,

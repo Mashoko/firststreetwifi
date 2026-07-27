@@ -185,13 +185,19 @@ export async function getConnectedClients() {
     allClients = allClients.concat(pageClients);
     totalRows = data.result?.totalRows ?? 0;
 
-    // Stop if we've fetched fewer rows than page size or if we have all rows
-    if (rows.length < pageSize || allClients.length >= totalRows) {
+    // Stop once a page comes back short (last page) or we hit the hard page
+    // cap (infinite-loop safety net if the API keeps returning full pages).
+    // Deliberately NOT comparing against totalRows here: that field name is
+    // an unverified guess at the real controller's response shape, and if
+    // it's wrong/missing it defaults to 0, which would make
+    // `allClients.length >= totalRows` true on page 1 and silently truncate
+    // results above one page again.
+    if (rows.length < pageSize || currentPage >= 50) {
       break;
     }
 
     currentPage++;
   }
 
-  return { total: totalRows || allClients.length, clients: allClients };
+  return { total: allClients.length, clients: allClients };
 }
