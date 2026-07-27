@@ -1,6 +1,6 @@
 <div class="filter-row">
   <% ['today','7d','30d','90d'].forEach(function(r) { %>
-    <a href="<%= basePath %>?range=<%= r %><%= packageId ? '&package=' + packageId : '' %>" class="<%= range === r ? 'active' : '' %>">
+    <a href="<%= basePath %>?range=<%= r %><%= packageId ? '&package=' + encodeURIComponent(packageId) : '' %>" class="<%= range === r ? 'active' : '' %>">
       <%= ({ today: 'Today', '7d': '7 Days', '30d': '30 Days', '90d': '90 Days' })[r] %>
     </a>
   <% }); %>
