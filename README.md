@@ -111,10 +111,11 @@ calls; run `npm run check-clients` to see the shape.
    of the existing `authorizeClient()` flow — no code change is expected,
    but it hasn't been tested against real hardware before).
 4. Run `npm run check-clients` again (now hitting the real controller).
-   Compare the printed JSON field names against what
-   `src/services/omada.js`'s `getConnectedClients()` assumes (`mac`, `name`,
-   `ip`, `ssid`, `apName`, `connectAt` — see the `.map()` call). If the real
-   controller uses different field names, update that `.map()` to match.
+   The printed output uses normalized field names: `mac`, `name`, `ip`,
+   `ssid`, `apName`, `connectedAt`. If any of those are empty or `null`,
+   the raw API field names didn't match `getConnectedClients()`'s `.map()`
+   guesses — inspect the real response and update those fallback guesses
+   in `src/services/omada.js` accordingly.
 5. Connect/disconnect a test device on the hotspot Wi-Fi and re-run
    `npm run check-clients` to confirm the list actually changes (i.e. it's
    reading live state, not a cached/stale result).
