@@ -1,0 +1,55 @@
+<%- include('../partials/admin-head', { activePage: 'overview', title: 'Overview' }) %>
+
+<div class="kpi-row">
+  <div class="glass-card kpi-tile">
+    <div class="label">Total Subscribers</div>
+    <div class="value"><%= subscribers.total %></div>
+    <div class="delta <%= subscribers.growthPct >= 0 ? 'up' : 'down' %>">
+      <%= subscribers.growthPct >= 0 ? '▲' : '▼' %> <%= Math.abs(subscribers.growthPct).toFixed(1) %>% this month
+    </div>
+  </div>
+  <div class="glass-card kpi-tile">
+    <div class="label">Today's Revenue</div>
+    <div class="value">$<%= Number(revenue.today).toFixed(2) %></div>
+    <div class="delta <%= revenue.changePct >= 0 ? 'up' : 'down' %>">
+      <%= revenue.changePct >= 0 ? '▲' : '▼' %> <%= Math.abs(revenue.changePct).toFixed(1) %>% vs yesterday
+    </div>
+  </div>
+  <div class="glass-card kpi-tile">
+    <div class="label">Live Now</div>
+    <div class="value"><%= live.total %></div>
+    <div class="delta neutral">● connected</div>
+  </div>
+  <div class="glass-card kpi-tile">
+    <div class="label">Vouchers Today</div>
+    <div class="value"><%= vouchersToday %></div>
+    <div class="delta neutral">sold today</div>
+  </div>
+</div>
+
+<div class="chart-row">
+  <div class="glass-card chart-card" style="flex:2">
+    <h3>Revenue — Last 30 Days</h3>
+    <%- lineChart(revenueTrend.map(function(r) { return { label: r.day, value: r.revenue, displayValue: '$' + Number(r.revenue).toFixed(2) }; })) %>
+  </div>
+  <div class="glass-card chart-card">
+    <h3>Top Package</h3>
+    <%- horizontalBarChart(topPackages.map(function(p) { return { label: p.package_id, value: p.revenue, displayValue: '$' + Number(p.revenue).toFixed(2) }; })) %>
+  </div>
+</div>
+
+<div class="glass-card">
+  <h3>Live Connected Users</h3>
+  <table class="dash-table">
+    <thead><tr><th>Device</th><th>IP</th><th>SSID</th><th>Connected</th></tr></thead>
+    <tbody>
+      <% live.clients.slice(0, 5).forEach(function(c) { %>
+        <tr><td><%= c.name %></td><td><%= c.ip %></td><td><%= c.ssid %></td><td><%= c.connectedAt %></td></tr>
+      <% }); %>
+      <% if (live.clients.length === 0) { %><tr><td colspan="4" style="color:var(--ink-muted)">No one connected right now.</td></tr><% } %>
+    </tbody>
+  </table>
+  <p style="margin-top:10px"><a href="/admin/live" style="color:var(--ink-secondary);font-size:12px">See all connected users →</a></p>
+</div>
+
+<%- include('../partials/admin-foot') %>

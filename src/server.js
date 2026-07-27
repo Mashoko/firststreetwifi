@@ -7,7 +7,7 @@ import { initSchema } from './db/index.js';
 import { portalRouter } from './routes/portal.js';
 import { payRouter } from './routes/pay.js';
 import { loginRouter } from './routes/login.js';
-import { adminRouter } from './routes/admin.js';
+import { adminRouter } from './routes/admin/index.js';
 import { lineChart, horizontalBarChart, sparkline } from './lib/charts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
