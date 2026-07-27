@@ -151,30 +151,47 @@ export async function getConnectedClients() {
   const { token, cookie } = await omadaLogin();
   const siteKey = await resolveSiteKey(cookie, token);
 
-  const url = `${config.omada.baseUrl}/${config.omada.controllerId}/api/v2/sites/${siteKey}/clients?currentPage=1&currentPageSize=100&filters.active=true`;
-  const res = await fetch(url, {
-    agent,
-    headers: {
-      'Content-Type': 'application/json',
-      'Csrf-Token': token,
-      Cookie: cookie,
-    },
-  });
+  const pageSize = 100;
+  let currentPage = 1;
+  let allClients = [];
+  let totalRows = 0;
 
-  const data = await res.json();
-  if (!data || data.errorCode !== 0) {
-    throw new Error(`Omada client list failed: ${JSON.stringify(data)}`);
+  while (true) {
+    const url = `${config.omada.baseUrl}/${config.omada.controllerId}/api/v2/sites/${siteKey}/clients?currentPage=${currentPage}&currentPageSize=${pageSize}&filters.active=true`;
+    const res = await fetch(url, {
+      agent,
+      headers: {
+        'Content-Type': 'application/json',
+        'Csrf-Token': token,
+        Cookie: cookie,
+      },
+    });
+
+    const data = await res.json();
+    if (!data || data.errorCode !== 0) {
+      throw new Error(`Omada client list failed: ${JSON.stringify(data)}`);
+    }
+
+    const rows = data.result?.data || [];
+    const pageClients = rows.map((c) => ({
+      mac: c.mac || c.clientMac || '',
+      name: c.name || c.hostName || 'Unknown device',
+      ip: c.ip || c.wirelessClient?.ip || '',
+      ssid: c.ssid || c.wirelessClient?.ssid || '',
+      apName: c.apName || '',
+      connectedAt: c.connectAt || c.lastSeen || null,
+    }));
+
+    allClients = allClients.concat(pageClients);
+    totalRows = data.result?.totalRows ?? 0;
+
+    // Stop if we've fetched fewer rows than page size or if we have all rows
+    if (rows.length < pageSize || allClients.length >= totalRows) {
+      break;
+    }
+
+    currentPage++;
   }
 
-  const rows = data.result?.data || [];
-  const clients = rows.map((c) => ({
-    mac: c.mac || c.clientMac || '',
-    name: c.name || c.hostName || 'Unknown device',
-    ip: c.ip || c.wirelessClient?.ip || '',
-    ssid: c.ssid || c.wirelessClient?.ssid || '',
-    apName: c.apName || '',
-    connectedAt: c.connectAt || c.lastSeen || null,
-  }));
-
-  return { total: data.result?.totalRows ?? clients.length, clients };
+  return { total: totalRows || allClients.length, clients: allClients };
 }
