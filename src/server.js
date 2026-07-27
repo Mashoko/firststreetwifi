@@ -8,12 +8,16 @@ import { portalRouter } from './routes/portal.js';
 import { payRouter } from './routes/pay.js';
 import { loginRouter } from './routes/login.js';
 import { adminRouter } from './routes/admin.js';
+import { lineChart, horizontalBarChart, sparkline } from './lib/charts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 initSchema();
 
 const app = express();
+app.locals.lineChart = lineChart;
+app.locals.horizontalBarChart = horizontalBarChart;
+app.locals.sparkline = sparkline;
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, '..', 'views'));
 app.use(express.static(path.join(__dirname, '..', 'public')));
