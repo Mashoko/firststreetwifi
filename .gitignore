@@ -4,3 +4,4 @@ data.sqlite
 data.sqlite-*
 *.log
 .worktrees/
+.superpowers/
