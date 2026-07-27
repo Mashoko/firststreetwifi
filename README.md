@@ -90,6 +90,35 @@ Existing voucher: `POST /login` with the code → Omada authorizes the client di
 - `src/packages.js` — **edit this to change pricing/packages**
 - `views/` — EJS templates (branding lives here + `public/style.css`)
 
+## Connected clients (live users)
+
+`getConnectedClients()` in `src/services/omada.js` fetches currently-active
+clients on the configured site — used by the admin dashboard to show who's
+online right now. In `MOCK_MODE`, it returns fixture data with no network
+calls; run `npm run check-clients` to see the shape.
+
+**Before relying on this against a real controller**, confirm it end-to-end:
+
+1. Migrate the "Africom Hotspot" site from Omada Cloud (Cloud Essentials
+   doesn't support external API access at all) onto a physical hardware
+   controller (OC200/OC300-class), following TP-Link's site-migration flow
+   in the Omada app.
+2. Set up the Hotspot Operator account and External Portal exactly as
+   described above, pointing `OMADA_BASE_URL` / `OMADA_CONTROLLER_ID` at the
+   physical controller's local address, and set `MOCK_MODE=false`.
+3. Buy a voucher through the real portal end-to-end and confirm the paying
+   client actually gets network access (this is the first real-hardware use
+   of the existing `authorizeClient()` flow — no code change is expected,
+   but it hasn't been tested against real hardware before).
+4. Run `npm run check-clients` again (now hitting the real controller).
+   Compare the printed JSON field names against what
+   `src/services/omada.js`'s `getConnectedClients()` assumes (`mac`, `name`,
+   `ip`, `ssid`, `apName`, `connectAt` — see the `.map()` call). If the real
+   controller uses different field names, update that `.map()` to match.
+5. Connect/disconnect a test device on the hotspot Wi-Fi and re-run
+   `npm run check-clients` to confirm the list actually changes (i.e. it's
+   reading live state, not a cached/stale result).
+
 ## Switching to PostgreSQL later
 
 Only `src/db/index.js` and the query calls need changing. The schema is standard SQL.
