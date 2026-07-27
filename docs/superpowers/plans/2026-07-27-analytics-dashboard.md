@@ -249,7 +249,7 @@ samples.forEach((s, i) => {
 console.log(`Seeded ${samples.length} transactions.`);
 ```
 
-This gives 5 distinct paid phones (one, `0771111111`, with 2 purchases 10 days apart), 1 failed transaction, and a spread of `daysAgo` values (0, 1, 2, 5, 10, 20) so revenue/subscriber trend queries have real data across the last 30 days. Voucher expiry math naturally produces a mix of currently-active and already-expired vouchers (e.g. the `daysAgo: 0` day-pass is still active; the `daysAgo: 10` week-pass has expired).
+This gives **4 distinct paid phones** across 5 paid transactions (`0771111111` appears twice — 2 purchases 10 days apart, so it counts once as a subscriber but contributes 2 rows to `transactions`/`vouchers`), plus 1 failed transaction from a 5th phone, and a spread of `daysAgo` values (0, 1, 2, 5, 10, 20) so revenue/subscriber trend queries have real data across the last 30 days. Voucher expiry math naturally produces a mix of currently-active and already-expired vouchers (e.g. the `daysAgo: 0` day-pass is still active; the `daysAgo: 10` week-pass has expired).
 
 - [ ] **Step 3: Run the seed script and verify it inserted correctly**
 
@@ -263,7 +263,7 @@ import('./src/db/index.js').then(({ db }) => {
 "
 ```
 
-Expected: total transaction count `6`, distinct paid-phone count `5`.
+Expected: total transaction count `6`, distinct paid-phone count `4`.
 
 - [ ] **Step 4: Verify `subscribers.js` against the seeded data**
 
@@ -278,7 +278,7 @@ import('./src/services/analytics/subscribers.js').then((m) => {
 "
 ```
 
-Expected: `overview.total === 5`; `newest` lists 5 phones, most recent first_purchase (today's `0771111111` day-pass) at the top; `topSpenders` ranks `0773333333` ($25, month pass) highest; `lapsed` includes phones whose only purchase is >7 days old (`0773333333` at 20 days) but **not** `0771111111` (its most recent purchase was today, even though it also has a 10-day-old one — the query uses `MAX(created_at)` per phone).
+Expected: `overview.total === 4` (4 distinct paid phones — `0771111111` counts once despite its 2 purchases); `newest` lists 4 phones ordered by each phone's *first-ever* purchase date descending — `0772222222` (first purchase 1 day ago) on top, then `0774444444` (5 days ago), then `0771111111` (its first purchase was the *week*-pass 10 days ago, not today's day-pass — `MIN(created_at)` per phone), then `0773333333` (20 days ago) last; `topSpenders` ranks `0773333333` ($25, month pass) highest; `lapsed` includes only `0773333333` (its one and only purchase is 20 days old) — **not** `0771111111`, even though one of its two purchases is 10 days old, because the query's `HAVING` clause is driven by `MAX(created_at)` per phone (its most recent purchase was today).
 
 - [ ] **Step 5: Confirm the seed script is not staged**
 
@@ -1247,11 +1247,11 @@ Set admin credentials if this worktree's `.env` doesn't already have them (check
 cd /tmp && curl -s -c admin-cookies.txt -o /dev/null -w "%{http_code} %{redirect_url}\n" -X POST http://localhost:<PORT>/admin/login -d "username=<ADMIN_USER>&password=<ADMIN_PASSWORD>"
 curl -s -b admin-cookies.txt http://localhost:<PORT>/admin > overview.html
 grep -o 'Total Subscribers' overview.html
-grep -o '<div class="value">5</div>' overview.html
+grep -o '<div class="value">4</div>' overview.html
 grep -o 'Live Connected Users' overview.html
 ```
 
-Expected: login `302` to `/admin`; the Overview page HTML contains "Total Subscribers", a KPI tile showing `5` (the seeded subscriber count from Task 2), and "Live Connected Users". Also confirm logged-out access still redirects: `curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" http://localhost:<PORT>/admin` (no cookie) → `302` to `/admin/login`.
+Expected: login `302` to `/admin`; the Overview page HTML contains "Total Subscribers", a KPI tile showing `4` (the seeded distinct-paid-phone count from Task 2 — see Task 2's corrected note: `0771111111` has 2 purchases but counts once), and "Live Connected Users". Also confirm logged-out access still redirects: `curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" http://localhost:<PORT>/admin` (no cookie) → `302` to `/admin/login`.
 
 Stop the server afterward: `pkill -f "node src/server.js"`.
 
