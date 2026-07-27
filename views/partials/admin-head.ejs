@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %> · First Street WiFi</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/dashboard.css">
+</head>
+<body class="dashboard">
+  <div class="dash-layout">
+    <aside class="dash-sidebar">
+      <div class="brand">FS · First Street WiFi</div>
+      <nav>
+        <a href="/admin" class="<%= activePage === 'overview' ? 'active' : '' %>">Overview</a>
+        <a href="/admin/subscribers" class="<%= activePage === 'subscribers' ? 'active' : '' %>">Subscribers</a>
+        <a href="/admin/revenue" class="<%= activePage === 'revenue' ? 'active' : '' %>">Revenue</a>
+        <a href="/admin/vouchers" class="<%= activePage === 'vouchers' ? 'active' : '' %>">Vouchers</a>
+        <a href="/admin/live" class="<%= activePage === 'live' ? 'active' : '' %>">Live</a>
+      </nav>
+    </aside>
+    <main class="dash-main">
+      <div class="dash-topbar">
+        <span><%= title %></span>
+        <span><a href="/admin/logout">Log out</a></span>
+      </div>
