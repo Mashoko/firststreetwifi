@@ -1,0 +1,27 @@
+<%- include('../partials/admin-head', { activePage: 'live', title: 'Live Connected Users' }) %>
+
+<div class="glass-card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h3 style="margin:0">Live Connected Users (<span id="live-total"><%= total %></span>)</h3>
+    <input type="text" id="live-search" placeholder="Search device, IP, MAC..." style="background:var(--glass-bg);border:1px solid var(--glass-border);color:var(--ink-primary);border-radius:10px;padding:6px 12px;font-size:12px">
+  </div>
+  <table class="dash-table" id="live-table">
+    <thead><tr><th>Device</th><th>MAC</th><th>IP</th><th>SSID</th><th>Access Point</th><th>Connected Since</th></tr></thead>
+    <tbody id="live-tbody">
+      <% clients.forEach(function(c) { %>
+        <tr>
+          <td><%= c.name %></td>
+          <td><%= c.mac %></td>
+          <td><%= c.ip %></td>
+          <td><%= c.ssid %></td>
+          <td><%= c.apName %></td>
+          <td><%= c.connectedAt %></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <p id="live-empty" style="color:var(--ink-muted);<%= clients.length ? 'display:none' : '' %>">No one connected right now.</p>
+</div>
+
+<script src="/live-poll.js" defer></script>
+<%- include('../partials/admin-foot') %>

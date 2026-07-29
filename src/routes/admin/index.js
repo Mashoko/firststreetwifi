@@ -5,6 +5,7 @@ import { overviewRouter } from './overview.js';
 import { subscribersRouter } from './subscribers.js';
 import { revenueRouter } from './revenue.js';
 import { vouchersRouter } from './vouchers.js';
+import { liveRouter } from './live.js';
 
 export const adminRouter = express.Router();
 
@@ -38,3 +39,4 @@ adminRouter.use('/', overviewRouter);
 adminRouter.use('/subscribers', subscribersRouter);
 adminRouter.use('/revenue', revenueRouter);
 adminRouter.use('/vouchers', vouchersRouter);
+adminRouter.use('/live', liveRouter);
