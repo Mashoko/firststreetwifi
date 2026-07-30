@@ -34,6 +34,11 @@ app.use('/pay', payRouter);
 app.use('/login', loginRouter);
 app.use('/admin', adminRouter);
 
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).render('error', { message: 'Something went wrong loading this page.' });
+});
+
 app.listen(config.port, () => {
   console.log(`\n🌐 First Street WiFi running at ${config.baseUrl}`);
   console.log(`   Portal:  ${config.baseUrl}/`);
