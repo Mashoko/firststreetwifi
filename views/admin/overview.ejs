@@ -17,7 +17,7 @@
   </div>
   <div class="glass-card kpi-tile">
     <div class="label">Live Now</div>
-    <div class="value"><%= live.total %></div>
+    <div class="value"><%= live.unavailable ? 'Unavailable' : live.total %></div>
     <div class="delta neutral">● connected</div>
   </div>
   <div class="glass-card kpi-tile">

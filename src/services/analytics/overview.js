@@ -7,14 +7,16 @@ export async function getOverviewData() {
   const today = new Date().toISOString().slice(0, 10);
   const from = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
 
-  const [subscribers, revenue, vouchersLifecycleToday, live, revenueTrend, topPackages] = await Promise.all([
-    Promise.resolve(getSubscriberOverview()),
-    Promise.resolve(getRevenueOverview()),
-    Promise.resolve(getVoucherLifecycleCounts({ from: today, to: today })),
-    getConnectedClients(),
-    Promise.resolve(getRevenueTrend({ from, to: today })),
-    Promise.resolve(getRevenueByPackage({ from, to: today })),
-  ]);
+  const subscribers = getSubscriberOverview();
+  const revenue = getRevenueOverview();
+  const vouchersLifecycleToday = getVoucherLifecycleCounts({ from: today, to: today });
+  const revenueTrend = getRevenueTrend({ from, to: today });
+  const topPackages = getRevenueByPackage({ from, to: today });
+
+  const [liveResult] = await Promise.allSettled([getConnectedClients()]);
+  const live = liveResult.status === 'fulfilled'
+    ? liveResult.value
+    : { total: 0, clients: [], unavailable: true };
 
   return {
     subscribers,
