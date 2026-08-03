@@ -40,7 +40,7 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(config.port, () => {
-  console.log(`\n🌐 First Street WiFi running at ${config.baseUrl}`);
+  console.log(`\n🌐 Africom Hotspot running at ${config.baseUrl}`);
   console.log(`   Portal:  ${config.baseUrl}/`);
   console.log(`   Admin:   ${config.baseUrl}/admin`);
   console.log(`   Mode:    ${config.mockMode ? 'MOCK (no real Omada/Paynow calls)' : 'LIVE'}\n`);

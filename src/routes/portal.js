@@ -40,7 +40,7 @@ portalRouter.post('/buy', express.urlencoded({ extended: true }), async (req, re
     const pay = await initMobilePayment({
       reference,
       amount: pkg.price,
-      itemName: `${pkg.name} — First Street WiFi`,
+      itemName: `${pkg.name} — Africom Hotspot`,
       phone,
       email,
       method: method || 'ecocash',
