@@ -2,6 +2,9 @@
 
 <div class="kpi-row">
   <div class="glass-card kpi-tile">
+    <div class="icon-badge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 5 18.5V20"/><circle cx="9.5" cy="8" r="3.2"/><path d="M19 20v-1.5a3.4 3.4 0 0 0-2.4-3.26"/><path d="M14.8 4.9a3.2 3.2 0 0 1 0 6.2"/></svg>
+    </div>
     <div class="label">Total Subscribers</div>
     <div class="value"><%= subscribers.total %></div>
     <div class="delta <%= subscribers.growthPct >= 0 ? 'up' : 'down' %>">
@@ -9,6 +12,9 @@
     </div>
   </div>
   <div class="glass-card kpi-tile">
+    <div class="icon-badge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v9M9.5 15c0 1.1 1.1 2 2.5 2s2.5-.75 2.5-1.9c0-2.6-5-1.4-5-4 0-1.15 1.1-1.9 2.5-1.9s2.5.9 2.5 2"/></svg>
+    </div>
     <div class="label">Today's Revenue</div>
     <div class="value">$<%= Number(revenue.today).toFixed(2) %></div>
     <div class="delta <%= revenue.changePct >= 0 ? 'up' : 'down' %>">
@@ -16,11 +22,17 @@
     </div>
   </div>
   <div class="glass-card kpi-tile">
+    <div class="icon-badge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.2 15.8a5.6 5.6 0 0 1 7.6 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>
+    </div>
     <div class="label">Live Now</div>
     <div class="value"><%= live.unavailable ? 'Unavailable' : live.total %></div>
-    <div class="delta neutral">● connected</div>
+    <div class="delta neutral"><span class="dot-live <%= live.unavailable ? '' : 'on' %>"></span> connected</div>
   </div>
   <div class="glass-card kpi-tile">
+    <div class="icon-badge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V15a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3z"/><path d="M10 7v10" stroke-dasharray="2 2"/></svg>
+    </div>
     <div class="label">Vouchers Today</div>
     <div class="value"><%= vouchersToday %></div>
     <div class="delta neutral">sold today</div>
@@ -29,24 +41,41 @@
 
 <div class="chart-row">
   <div class="glass-card chart-card" style="flex:2">
-    <h3>Revenue — Last 30 Days</h3>
+    <h3>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5.5-5.5 4 4L21 7"/><path d="M15 7h6v6"/></svg>
+      Revenue — Last 30 Days
+    </h3>
     <%- lineChart(revenueTrend.map(function(r) { return { label: r.day, value: r.revenue, displayValue: '$' + Number(r.revenue).toFixed(2) }; })) %>
   </div>
   <div class="glass-card chart-card">
-    <h3>Top Package</h3>
+    <h3>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17.3l-5.3 3 1.4-6L3 10.2l6-.5L12 4l3 5.7 6 .5-4.9 4.1 1.4 6z"/></svg>
+      Top Package
+    </h3>
     <%- horizontalBarChart(topPackages.map(function(p) { return { label: p.package_id, value: p.revenue, displayValue: '$' + Number(p.revenue).toFixed(2) }; })) %>
   </div>
 </div>
 
 <div class="glass-card">
-  <h3>Live Connected Users</h3>
+  <h3 style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <span style="display:flex;align-items:center;gap:8px;color:var(--ink-primary);font-size:15px;font-weight:700;text-transform:none;letter-spacing:normal">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--green-dim)"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.2 15.8a5.6 5.6 0 0 1 7.6 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>
+      Live Connected Users
+    </span>
+    <span class="live-badge"><span class="dot-live"></span>Live</span>
+  </h3>
   <table class="dash-table">
     <thead><tr><th>Device</th><th>IP</th><th>SSID</th><th>Connected</th></tr></thead>
     <tbody>
       <% live.clients.slice(0, 5).forEach(function(c) { %>
         <tr><td><%= c.name %></td><td><%= c.ip %></td><td><%= c.ssid %></td><td><%= c.connectedAt %></td></tr>
       <% }); %>
-      <% if (live.clients.length === 0) { %><tr><td colspan="4" style="color:var(--ink-muted)">No one connected right now.</td></tr><% } %>
+      <% if (live.clients.length === 0) { %>
+        <tr class="empty-row"><td colspan="4">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.2 15.8a5.6 5.6 0 0 1 7.6 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></svg>
+          No one connected right now.
+        </td></tr>
+      <% } %>
     </tbody>
   </table>
   <p style="margin-top:10px"><a href="/admin/live" style="color:var(--ink-secondary);font-size:12px">See all connected users →</a></p>

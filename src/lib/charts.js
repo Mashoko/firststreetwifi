@@ -12,9 +12,11 @@ function escapeAttr(value) {
  * Single-series line chart. Renders as inline SVG with a hit-rect and a
  * hidden crosshair line that public/chart-tooltip.js drives on pointer move.
  */
-export function lineChart(points, { width = 560, height = 160, padding = 10, color = '#3987e5' } = {}) {
+const chartEmptyState = `<div class="chart-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3-3 2.5 2.5L18 9"/></svg>No data for this range.</div>`;
+
+export function lineChart(points, { width = 560, height = 160, padding = 10, color = '#34d876' } = {}) {
   if (!points.length) {
-    return `<div style="color:var(--ink-muted);font-size:12px">No data for this range.</div>`;
+    return chartEmptyState;
   }
 
   const values = points.map((p) => p.value);
@@ -54,7 +56,7 @@ export function lineChart(points, { width = 560, height = 160, padding = 10, col
  */
 export function horizontalBarChart(items) {
   if (!items.length) {
-    return `<div style="color:var(--ink-muted);font-size:12px">No data for this range.</div>`;
+    return chartEmptyState;
   }
 
   const max = Math.max(...items.map((i) => i.value), 1);

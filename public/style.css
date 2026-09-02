@@ -1,16 +1,18 @@
 :root {
-  --ink: #1a1523;
-  --paper: #faf7f2;
-  --jacaranda: #6b4e9e;      /* First Street jacaranda purple */
-  --jacaranda-deep: #4a3470;
-  --jacaranda-soft: #efe9f6;
-  --clay: #c9662e;           /* warm Harare brick accent */
-  --line: #e4ddd2;
-  --muted: #7a7185;
-  --ok: #2f8f5b;
+  --ink: #14181a;              /* dark charcoal — primary text */
+  --paper: #fafcfa;            /* clean, very-light neutral page bg */
+  --green: #19ff00;            /* exact Africom brand green (from logo) — accents, borders, glow */
+  --green-deep: #0e7a16;       /* deep green for solid fills w/ white text (AA contrast) */
+  --green-deeper: #0a5f11;     /* hover/active state for deep green */
+  --green-soft: #e9fbe6;       /* light green tint for selected surfaces */
+  --charcoal: #14181a;         /* secondary CTA surface */
+  --charcoal-deep: #23292c;    /* secondary CTA hover */
+  --line: #dfe8e0;             /* hairline borders, faint green-neutral */
+  --muted: #667069;            /* secondary text, green-neutral gray */
+  --ok: #0e7a16;
   --err: #c23b3b;
   --radius: 14px;
-  --shadow: 0 8px 30px rgba(74, 52, 112, 0.10);
+  --shadow: 0 8px 30px rgba(20, 40, 24, 0.10);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -22,12 +24,31 @@ body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Subtle brand watermark — the real logo, huge and faint, echoing its own
+   line-art in the corner rather than inventing new decorative shapes. */
+body::before {
+  content: '';
+  position: fixed;
+  top: -12vw; right: -14vw;
+  width: 55vw; height: 55vw;
+  max-width: 620px; max-height: 620px;
+  background: url('/images/africom-logo.jpeg') center / contain no-repeat;
+  opacity: 0.05;
+  filter: grayscale(1) contrast(1.4);
+  pointer-events: none;
+  z-index: 0;
 }
 
 .wrap {
   max-width: 520px;
   margin: 0 auto;
   padding: 28px 20px 60px;
+  position: relative;
+  z-index: 1;
 }
 
 /* Header / brand */
@@ -40,17 +61,22 @@ body {
 .brand .mark {
   width: 42px; height: 42px;
   border-radius: 12px;
-  background: linear-gradient(135deg, var(--jacaranda), var(--jacaranda-deep));
+  overflow: hidden;
   display: grid; place-items: center;
-  color: #fff; font-weight: 800; font-size: 20px;
   box-shadow: var(--shadow);
+  border: 1px solid rgba(20, 24, 26, 0.06);
+}
+.brand .mark img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
 }
 .brand h1 { font-size: 19px; letter-spacing: -0.02em; }
 .brand .sub { font-size: 12.5px; color: var(--muted); font-weight: 500; }
 
 .eyebrow {
   font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em;
-  text-transform: uppercase; color: var(--jacaranda);
+  text-transform: uppercase; color: var(--green-deep);
   margin-bottom: 8px;
 }
 h2 { font-size: 24px; letter-spacing: -0.02em; margin-bottom: 6px; }
@@ -67,15 +93,15 @@ h2 { font-size: 24px; letter-spacing: -0.02em; margin-bottom: 6px; }
   display: flex; align-items: center; justify-content: space-between;
   transition: border-color .15s, transform .1s, box-shadow .15s;
 }
-.pkg:hover { border-color: var(--jacaranda); }
+.pkg:hover { border-color: var(--green-deep); }
 .pkg.selected {
-  border-color: var(--jacaranda);
-  background: var(--jacaranda-soft);
-  box-shadow: var(--shadow);
+  border-color: var(--green);
+  background: var(--green-soft);
+  box-shadow: 0 0 0 3px rgba(25, 255, 0, 0.16), var(--shadow);
 }
 .pkg .name { font-weight: 700; font-size: 16px; }
 .pkg .blurb { font-size: 12.5px; color: var(--muted); }
-.pkg .price { font-size: 20px; font-weight: 800; color: var(--jacaranda-deep); white-space: nowrap; }
+.pkg .price { font-size: 20px; font-weight: 800; color: var(--green-deep); white-space: nowrap; }
 .pkg .price small { font-size: 12px; font-weight: 600; color: var(--muted); }
 
 /* Forms */
@@ -85,19 +111,31 @@ input[type=text], input[type=tel], input[type=email], input[type=password], sele
   width: 100%; padding: 13px 14px;
   border: 1.5px solid var(--line); border-radius: 10px;
   font-size: 15px; font-family: inherit; background: #fff;
+  transition: border-color .15s, box-shadow .15s;
 }
-input:focus, select:focus { outline: none; border-color: var(--jacaranda); }
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--green-deep);
+  box-shadow: 0 0 0 3px rgba(25, 255, 0, 0.18);
+}
 
 .btn {
   display: block; width: 100%;
   padding: 15px; border: none; border-radius: 12px;
-  background: var(--jacaranda); color: #fff;
+  background: var(--green-deep); color: #fff;
   font-size: 16px; font-weight: 700; font-family: inherit;
-  cursor: pointer; transition: background .15s;
+  cursor: pointer; transition: background .15s, transform .1s, box-shadow .15s;
+  box-shadow: 0 4px 14px rgba(14, 122, 22, 0.25);
 }
-.btn:hover { background: var(--jacaranda-deep); }
-.btn.clay { background: var(--clay); }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn:hover { background: var(--green-deeper); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(14, 122, 22, 0.32); }
+.btn:active { background: var(--green-deeper); transform: translateY(0); }
+.btn.clay {
+  background: #fff; color: var(--charcoal);
+  border: 1.5px solid var(--charcoal);
+  box-shadow: none;
+}
+.btn.clay:hover { background: var(--charcoal); color: #fff; box-shadow: 0 4px 14px rgba(20, 24, 26, 0.2); }
+.btn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
 
 .divider {
   display: flex; align-items: center; gap: 14px;
@@ -116,7 +154,7 @@ input:focus, select:focus { outline: none; border-color: var(--jacaranda); }
 .big-icon { font-size: 46px; margin-bottom: 12px; }
 .voucher-code {
   font-size: 28px; font-weight: 800; letter-spacing: 0.06em;
-  color: var(--jacaranda-deep); background: var(--jacaranda-soft);
+  color: var(--green-deep); background: var(--green-soft);
   padding: 14px; border-radius: 12px; margin: 16px 0;
   font-family: 'SF Mono', ui-monospace, monospace;
 }
@@ -124,8 +162,8 @@ input:focus, select:focus { outline: none; border-color: var(--jacaranda); }
 .msg-err { color: var(--err); }
 .spinner {
   width: 38px; height: 38px; margin: 0 auto 16px;
-  border: 3px solid var(--jacaranda-soft);
-  border-top-color: var(--jacaranda);
+  border: 3px solid var(--green-soft);
+  border-top-color: var(--green);
   border-radius: 50%; animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -138,9 +176,9 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--lin
 th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .stat-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px; }
 .stat { background: #fff; border: 1.5px solid var(--line); border-radius: 12px; padding: 14px; }
-.stat .n { font-size: 24px; font-weight: 800; color: var(--jacaranda-deep); }
+.stat .n { font-size: 24px; font-weight: 800; color: var(--green-deep); }
 .stat .l { font-size: 12px; color: var(--muted); }
 .badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
 .badge.paid { background: #e3f5ea; color: var(--ok); }
-.badge.created, .badge.sent { background: #fdf0e3; color: var(--clay); }
+.badge.created, .badge.sent { background: #f1f4f0; color: var(--charcoal); }
 .badge.failed { background: #fbe6e6; color: var(--err); }
