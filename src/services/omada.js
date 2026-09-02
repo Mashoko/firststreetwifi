@@ -1,8 +1,12 @@
-import https from 'https';
+import { Agent } from 'undici';
 import { config } from '../config.js';
 
 // Allow self-signed controller certs when verifyTls is false.
-const agent = new https.Agent({ rejectUnauthorized: config.omada.verifyTls });
+// Node's built-in fetch() is undici-based and does NOT honor a plain
+// https.Agent passed as `agent` — it silently ignores it, so TLS
+// verification stayed on even with OMADA_VERIFY_TLS=false. An undici
+// Agent passed as `dispatcher` is the option fetch() actually reads.
+const dispatcher = new Agent({ connect: { rejectUnauthorized: config.omada.verifyTls } });
 
 /**
  * Omada External-Portal authorization (Controller v5.0.15+ flow):
@@ -16,7 +20,7 @@ async function omadaLogin() {
   const url = `${config.omada.baseUrl}/${config.omada.controllerId}/api/v2/hotspot/login`;
   const res = await fetch(url, {
     method: 'POST',
-    agent,
+    dispatcher,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: config.omada.operatorUser,
@@ -66,7 +70,7 @@ export async function authorizeClient(clientInfo, durationMinutes) {
 
   const res = await fetch(url, {
     method: 'POST',
-    agent,
+    dispatcher,
     headers: {
       'Content-Type': 'application/json',
       'Csrf-Token': token,
@@ -108,7 +112,7 @@ async function resolveSiteKey(cookie, token) {
 
   const url = `${config.omada.baseUrl}/${config.omada.controllerId}/api/v2/current/sites?currentPage=1&currentPageSize=100`;
   const res = await fetch(url, {
-    agent,
+    dispatcher,
     headers: {
       'Content-Type': 'application/json',
       'Csrf-Token': token,
@@ -159,7 +163,7 @@ export async function getConnectedClients() {
   while (true) {
     const url = `${config.omada.baseUrl}/${config.omada.controllerId}/api/v2/sites/${siteKey}/clients?currentPage=${currentPage}&currentPageSize=${pageSize}&filters.active=true`;
     const res = await fetch(url, {
-      agent,
+      dispatcher,
       headers: {
         'Content-Type': 'application/json',
         'Csrf-Token': token,

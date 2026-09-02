@@ -37,7 +37,25 @@ export async function initMobilePayment({ reference, amount, itemName, phone, em
   const payment = paynow.createPayment(reference, email || config.paynow.authEmail);
   payment.add(itemName, amount);
 
-  const response = await paynow.sendMobile(payment, phone, method);
+  // The Paynow SDK can throw instead of resolving to a {success:false} result
+  // (e.g. a response hash-validation failure) — catch that so callers always
+  // get the documented {success, error} shape and can mark the transaction
+  // failed, rather than the exception bypassing that and leaving the
+  // transaction stuck at 'created' in the DB indefinitely.
+  let response;
+  try {
+    response = await paynow.sendMobile(payment, phone, method);
+  } catch (err) {
+    console.error('Paynow sendMobile threw:', err);
+    return { success: false, error: err.message || 'Payment initiation failed' };
+  }
+  // The SDK can also resolve to undefined instead of throwing or rejecting
+  // (its own internal error handling logs the failure — e.g. a response
+  // hash-validation mismatch — but doesn't surface it on the promise we
+  // awaited), so a falsy response is a failure too, not just !response.success.
+  if (!response) {
+    return { success: false, error: 'No response from Paynow (payment gateway error)' };
+  }
   if (response.success) {
     return {
       success: true,

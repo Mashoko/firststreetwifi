@@ -2,7 +2,7 @@ services:
   web:
     build: .
     ports:
-      - "3000:3000"
+      - "3050:3050"
     env_file: .env
     volumes:
       - ./data.sqlite:/app/data.sqlite

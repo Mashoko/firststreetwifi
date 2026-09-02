@@ -20,7 +20,11 @@
       <% }); %>
     </tbody>
   </table>
-  <p id="live-empty" style="color:var(--ink-muted);<%= clients.length ? 'display:none' : '' %>">No one connected right now.</p>
+  <p id="live-empty" style="color:var(--ink-muted);<%= clients.length ? 'display:none' : '' %>">
+    <%= typeof unavailable !== 'undefined' && unavailable
+      ? 'Live client data is temporarily unavailable (could not reach the controller).'
+      : 'No one connected right now.' %>
+  </p>
 </div>
 
 <script src="/live-poll.js" defer></script>
