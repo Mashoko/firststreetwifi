@@ -105,10 +105,20 @@ display (which only happens for *new* vouchers going forward).
 - **`views/portal.ejs`** — each package card currently shows name + blurb
   + price. Replace the blurb line with data + duration
   (e.g. "3GB · 7 Days"), price stays as-is.
-- **`views/success.ejs`** — currently converts `minutes` to a "N days" /
-  "N hours" string. Add the GB amount alongside it (needs `pkg.dataGB`
-  passed into the render call in both `pay.js`'s poll-status path and
-  `login.js`'s voucher-redemption path — check both currently pass `pkg`).
+- **`views/success.ejs`** (voucher-redemption confirmation, via
+  `login.js` only — the Paynow purchase confirmation is a separate flow,
+  see below) — currently converts `minutes` to a "N days" / "N hours"
+  string. Add the GB amount alongside it, guarded for legacy vouchers
+  where `pkg.dataGB` is `undefined` (omit the GB line rather than
+  printing "undefined").
+- **`views/waiting.ejs`** (Paynow purchase confirmation) — the "you're
+  connected" state is rendered client-side by JS in this file after
+  polling `GET /pay/status/:reference`, which today returns only
+  `{status, voucher}`. It currently shows just the voucher code, no
+  package info at all. Extend the JSON response to include `dataGB` and
+  `name` (sourced server-side from `getPackage(tx.package_id)`, same
+  principle as requirement #11 — the client never invents this) and show
+  them in the `#done` card.
 - **Admin dashboard (Vouchers, Revenue)** — both already key off
   `package_id` as a raw string in their tables (`views/admin/vouchers.ejs`,
   `views/admin/revenue.ejs`); swapping which ids exist requires no code
