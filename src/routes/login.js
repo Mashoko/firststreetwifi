@@ -26,7 +26,7 @@ loginRouter.post('/', express.urlencoded({ extended: true }), async (req, res) =
   }
 
   try {
-    await authorizeClient(clientInfo, voucher.minutes);
+    await authorizeClient(clientInfo, voucher.minutes, voucher.data_bytes);
     if (voucher.status === 'unused') markVoucherUsed(code, voucher.minutes);
     return res.render('success', { minutes: voucher.minutes, pkg });
   } catch (err) {
