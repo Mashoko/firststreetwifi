@@ -603,7 +603,7 @@ missing when you reach that point.
 - Create: `scripts/sync-erpnext-invoices.js`
 
 **Interfaces:**
-- Consumes: `findInvoiceByTransactionRef`, `getItemByCode`, `createAndSubmitInvoice`, `createAndSubmitPaymentEntry` (Tasks 2, 4, 5); `getPackage` (`src/packages.js`, already exists); `db` (`src/db/index.js`, already exists)
+- Consumes: `getItemByCode`, `createAndSubmitInvoice`, `createAndSubmitPaymentEntry` (Tasks 2, 4, 5); `getPackage` (`src/packages.js`, already exists); `db` (`src/db/index.js`, already exists)
 
 - [ ] **Step 1: Create `scripts/sync-erpnext-invoices.js`**
 
@@ -611,7 +611,6 @@ missing when you reach that point.
 import { db } from '../src/db/index.js';
 import { getPackage } from '../src/packages.js';
 import {
-  findInvoiceByTransactionRef,
   getItemByCode,
   createAndSubmitInvoice,
   createAndSubmitPaymentEntry,
@@ -652,20 +651,20 @@ function claim(tx) {
 }
 
 async function syncOne(tx) {
-  // Idempotency: already has an invoice recorded locally.
+  // Idempotency: already has an invoice recorded locally. This is the ONLY
+  // idempotency check in this design — the original plan also cross-checked
+  // ERPNext directly via a website_transaction_id custom field, but that
+  // field is dropped from this integration (see Global Constraints; the DB
+  // column never synced even after a human created the Custom Field record
+  // via the ERPNext UI). The accepted gap: a crash between "ERPNext created
+  // the invoice" and "we recorded that locally" could produce a duplicate
+  // invoice on retry. Given this business's transaction volume and the
+  // atomic claim below (which already prevents the much more likely
+  // double-processing case — two overlapping cron runs), this is a
+  // documented, accepted risk, not a silent one.
   if (tx.erpnext_invoice_name) return 'already-synced';
 
   if (!claim(tx)) return 'claimed-by-another-run';
-
-  // Idempotency: check ERPNext directly in case a prior run created the
-  // invoice but crashed before recording it locally.
-  const existingInvoice = await findInvoiceByTransactionRef(tx.reference);
-  if (existingInvoice) {
-    db.prepare(
-      `UPDATE transactions SET erpnext_invoice_name=?, erpnext_sync_status='success', erpnext_synced_at=datetime('now'), updated_at=datetime('now') WHERE id=?`
-    ).run(existingInvoice, tx.id);
-    return 'adopted-existing';
-  }
 
   const pkg = getPackage(tx.package_id);
   if (!pkg || !pkg.dataGB) {
@@ -678,17 +677,17 @@ async function syncOne(tx) {
   }
 
   const itemCode = {
-    '1gb': 'HOTSPOT-1GB-1D',
-    '2gb': 'HOTSPOT-2GB-1D',
-    '3gb': 'HOTSPOT-3GB-7D',
-    '5gb': 'HOTSPOT-5GB-14D',
-    '10gb': 'HOTSPOT-10GB-30D',
+    '1gb': 'electroair0.5',
+    '2gb': 'electroair1',
+    '3gb': '$2 Hotspot Voucher',
+    '5gb': '$3 Hotspot Voucher',
+    '10gb': 'electroair5',
   }[tx.package_id];
 
   try {
     const exists = await getItemByCode(itemCode);
     if (!exists) {
-      throw new Error(`Item ${itemCode} does not exist in ERPNext — run scripts/setup-erpnext.js first`);
+      throw new Error(`Item ${itemCode} does not exist in ERPNext — this integration never creates Items, so this means the Item was renamed or removed on the ERPNext side; fix the mapping or the Item, don't create a replacement here`);
     }
 
     const invoiceName = await createAndSubmitInvoice({
@@ -752,7 +751,7 @@ async function main() {
     }
     counts.attempted++;
     const result = await syncOne(tx);
-    if (result === 'success' || result === 'adopted-existing') counts.success++;
+    if (result === 'success') counts.success++;
     else if (result === 'failed') counts.failed++;
     else if (result === 'claimed-by-another-run') counts.skipped++;
     else counts.other++;
@@ -979,11 +978,11 @@ This task is not dispatched to a subagent — it needs live SSH access to the pr
 
 SSH to the production server, add `ERPNEXT_BASE_URL`, `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET` to `~/firststreetwifi/.env` with the real values. Do not print the secret to any log or terminal output that gets captured in a report.
 
-- [ ] **Step 2: Sync the 9 changed/new files to production** (same `scp` approach used for the data-quota-packages deployment): `src/config.js`, `src/services/erpnext.js`, `src/db/index.js`, `src/routes/pay.js`, `scripts/setup-erpnext.js`, `scripts/sync-erpnext-invoices.js`, `package.json`, `views/admin/revenue.ejs`, `src/services/analytics/revenue.js`.
+- [ ] **Step 2: Sync the 8 changed/new files to production** (same `scp` approach used for the data-quota-packages deployment): `src/config.js`, `src/services/erpnext.js`, `src/db/index.js`, `src/routes/pay.js`, `scripts/sync-erpnext-invoices.js`, `package.json`, `views/admin/revenue.ejs`, `src/services/analytics/revenue.js`. There is no `scripts/setup-erpnext.js` in this design — Task 6 creates no code (see its rewritten scope: Items already exist, Custom Fields are dropped, Modes of Payment are a manual ERPNext UI step).
 
-- [ ] **Step 3: On production, run `npm install` if `package.json` changed dependencies** (it doesn't in this plan — `undici` is already a dependency — but confirm `node_modules` doesn't need updating before proceeding), then `npm run init-db` (applies Task 3's migration to the real database), then `npm run setup-erpnext` (creates the real Items/Custom Fields/Modes of Payment — this is the actual production run of Task 6's script, not a repeat of the design-phase read-only checks).
+- [ ] **Step 3: On production, run `npm install` if `package.json` changed dependencies** (it doesn't in this plan — `undici` is already a dependency — but confirm `node_modules` doesn't need updating before proceeding), then `npm run init-db` (applies Task 3's migration to the real database). Confirm the 2 Modes of Payment (`Paynow EcoCash`, `Paynow OneMoney`) already exist in ERPNext from Task 6's manual step — if not done yet, do it now before proceeding (ERPNext UI, not a script).
 
-- [ ] **Step 4: Tell the user which Modes of Payment need their account mapping configured in ERPNext** (per Task 5's `paid_to` design) before real Payment Entries can succeed — this is a manual step in the ERPNext UI that Finance needs to do, not something scriptable without knowing which account they want.
+- [ ] **Step 4: Confirm each Mode of Payment's account mapping is configured in ERPNext** (per `createAndSubmitPaymentEntry`'s `paid_to` design in Task 5) — this is a manual step in the ERPNext UI (Mode of Payment > Accounts) that Finance needs to do, not something scriptable without knowing which account they want. Real Payment Entries fail with a clear error until this is done; confirm it before Step 7's real test.
 
 - [ ] **Step 5: Set up the cron job** for `scripts/sync-erpnext-invoices.js`, e.g. every 3 minutes:
 
