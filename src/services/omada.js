@@ -45,11 +45,12 @@ async function omadaLogin() {
  * clientInfo comes from the captive-portal redirect query string.
  * durationMinutes is converted to milliseconds for the `time` field.
  */
-export async function authorizeClient(clientInfo, durationMinutes) {
+export async function authorizeClient(clientInfo, durationMinutes, dataBytes) {
   const timeMs = durationMinutes * 60 * 1000;
 
   if (config.mockMode) {
-    console.log(`[MOCK] Omada authorize: client=${clientInfo.clientMac} for ${durationMinutes}min`);
+    const dataNote = dataBytes ? `, ${dataBytes} bytes` : '';
+    console.log(`[MOCK] Omada authorize: client=${clientInfo.clientMac} for ${durationMinutes}min${dataNote}`);
     return { success: true, mock: true };
   }
 
@@ -58,6 +59,9 @@ export async function authorizeClient(clientInfo, durationMinutes) {
   const url = `${config.omada.baseUrl}/${config.omada.controllerId}/api/v2/hotspot/extPortal/auth`;
 
   // Wireless (EAP) auth payload. authType 4 = external portal.
+  // totalTrafficLimitBytes is only set when dataBytes is provided — a
+  // legacy (pre-data-quota) voucher redemption authorizes time-only,
+  // exactly as it always has, rather than gaining an invented data cap.
   const body = {
     clientMac: clientInfo.clientMac,
     apMac: clientInfo.apMac,
@@ -67,6 +71,9 @@ export async function authorizeClient(clientInfo, durationMinutes) {
     time: timeMs,
     authType: 4,
   };
+  if (dataBytes) {
+    body.totalTrafficLimitBytes = dataBytes;
+  }
 
   const res = await fetch(url, {
     method: 'POST',
