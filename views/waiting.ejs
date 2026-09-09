@@ -25,6 +25,7 @@
     <div class="card center" id="done" style="display:none">
       <div class="big-icon">🎉</div>
       <h2>You're connected!</h2>
+      <p class="lead" id="doneAllowance"></p>
       <p class="lead">Your voucher code (save it):</p>
       <div class="voucher-code" id="voucherCode">—</div>
       <p class="note">You now have internet access. Enjoy!</p>
@@ -51,6 +52,8 @@
         if (data.status === 'paid') {
           document.getElementById('pending').style.display = 'none';
           document.getElementById('voucherCode').textContent = data.voucher || '—';
+          const allowanceEl = document.getElementById('doneAllowance');
+          allowanceEl.textContent = data.dataGB ? (data.name + ' — ' + data.dataGB + 'GB') : '';
           document.getElementById('done').style.display = 'block';
           return;
         }
