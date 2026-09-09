@@ -84,7 +84,10 @@ export async function findInvoiceByTransactionRef(reference) {
   const data = await erpRequest(
     'GET',
     `/api/resource/Sales Invoice?filters=${filters}&fields=["name"]&limit_page_length=1`
-  );
+  ).catch((err) => {
+    if (String(err.message).includes('Field not permitted in query')) return null;
+    throw err;
+  });
   return data?.data?.[0]?.name || null;
 }
 
