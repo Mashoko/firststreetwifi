@@ -113,6 +113,10 @@ const COMPANY = 'Africom Private Ltd ZiG';
 const CUSTOMER = 'CASH USD';
 const TAX_TEMPLATE = 'Zimbabwe Tax - APLG';
 const POS_PROFILE = 'Contact Centre';
+const MODE_OF_PAYMENT = {
+  ecocash: 'Paynow EcoCash',
+  onemoney: 'Paynow OneMoney',
+};
 
 /**
  * Creates a Sales Invoice for one hotspot package purchase and submits it.
@@ -161,4 +165,69 @@ export async function createAndSubmitInvoice({ reference, packageId, itemCode, a
   });
 
   return invoiceName;
+}
+
+/**
+ * Creates and submits a Payment Entry against an already-submitted Sales
+ * Invoice, marking it paid. `paid_to` (which GL account the money lands in)
+ * is intentionally NOT hardcoded here — it's read from the Mode of
+ * Payment's own account mapping for this company, which Finance configures
+ * directly in ERPNext (see scripts/setup-erpnext.js). If that mapping is
+ * missing, this throws a clear, actionable error rather than guessing an
+ * account.
+ */
+export async function createAndSubmitPaymentEntry({ invoiceName, amount, method, reference }) {
+  const modeOfPayment = MODE_OF_PAYMENT[method] || MODE_OF_PAYMENT.ecocash;
+
+  if (config.mockMode) {
+    console.log(`[MOCK] ERPNext create+submit payment entry: invoice=${invoiceName} mode=${modeOfPayment} amount=${amount}`);
+    return `MOCK-PE-${reference}`;
+  }
+
+  const modeDoc = await erpRequest('GET', `/api/resource/Mode of Payment/${encodeURIComponent(modeOfPayment)}?fields=["name","accounts"]`);
+  const accountRow = (modeDoc?.data?.accounts || []).find((a) => a.company === COMPANY);
+  if (!accountRow || !accountRow.default_account) {
+    throw new Error(
+      `Mode of Payment "${modeOfPayment}" has no default account configured for company "${COMPANY}" — ` +
+      `configure this in ERPNext (Mode of Payment > Accounts) before Payment Entries can be created.`
+    );
+  }
+
+  const invoiceDoc = await erpRequest('GET', `/api/resource/Sales Invoice/${encodeURIComponent(invoiceName)}?fields=["debit_to"]`);
+  const receivableAccount = invoiceDoc?.data?.debit_to;
+  if (!receivableAccount) {
+    throw new Error(`Could not read receivable account (debit_to) from invoice ${invoiceName}`);
+  }
+
+  const draft = await erpRequest('POST', '/api/resource/Payment Entry', {
+    payment_type: 'Receive',
+    party_type: 'Customer',
+    party: CUSTOMER,
+    company: COMPANY,
+    mode_of_payment: modeOfPayment,
+    paid_from: receivableAccount,
+    paid_to: accountRow.default_account,
+    paid_amount: amount,
+    received_amount: amount,
+    reference_no: reference,
+    reference_date: new Date().toISOString().slice(0, 10),
+    references: [
+      {
+        reference_doctype: 'Sales Invoice',
+        reference_name: invoiceName,
+        allocated_amount: amount,
+      },
+    ],
+  });
+
+  const peName = draft?.data?.name;
+  if (!peName) {
+    throw new Error(`ERPNext Payment Entry creation returned no name for invoice ${invoiceName}`);
+  }
+
+  await erpRequest('PUT', `/api/resource/Payment Entry/${encodeURIComponent(peName)}`, {
+    docstatus: 1,
+  });
+
+  return peName;
 }
