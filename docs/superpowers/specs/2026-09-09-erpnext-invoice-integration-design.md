@@ -83,7 +83,7 @@ see the corrected Package → Item mapping below.
   follow-up, not solved here.
 - **No `OneMoney` (or generic `Paynow`) Mode of Payment exists** — only
   various `Ecocash` variants tied to specific shops/tills. Two new Modes of
-  Payment are needed: `Paynow EcoCash`, `Paynow OneMoney` — created directly
+  Payment are needed: `Paynow Ecocash`, `Paynow OneMoney` — created directly
   in the ERPNext UI by a user with proper access (the integration user
   cannot create Mode of Payment records, confirmed above), not by this
   integration's code.
@@ -232,7 +232,7 @@ minutes):
      `website_package_id`/`payment_gateway` fields are set — see below.
    - Submit it (`docstatus: 1`).
    - Create a Payment Entry against it: amount = `tx.amount`, mode of
-     payment = `"Paynow EcoCash"` or `"Paynow OneMoney"` depending on
+     payment = `"Paynow Ecocash"` or `"Paynow OneMoney"` depending on
      `tx.method`, reference = `tx.reference`. Submit it too.
    - On success: store `erpnext_invoice_name`, `erpnext_payment_entry_name`,
      `erpnext_customer='CASH USD'`, `erpnext_sync_status='success'`,
@@ -293,7 +293,7 @@ recurring sync script's first real run:
   above). Nothing to do.
 - **Custom Fields:** dropped from this integration entirely (see "Custom
   fields dropped" above). Nothing to do until the schema-sync follow-up.
-- **Modes of Payment:** `Paynow EcoCash` and `Paynow OneMoney` (Type:
+- **Modes of Payment:** `Paynow Ecocash` and `Paynow OneMoney` (Type:
   `General`) must exist before the sync script's first real Payment Entry
   create — created directly via the ERPNext UI (List view → New), a plain
   record insert with no schema-sync complication, unlike Custom Field.
@@ -394,7 +394,7 @@ established throughout its history):
    short-circuit with a `[MOCK]` log line and no real HTTP call, same
    pattern as `omada.js`/`paynow.js`.
 2. Confirm the one-time manual setup is complete before the first real
-   sync run: the 2 Modes of Payment (`Paynow EcoCash`, `Paynow OneMoney`)
+   sync run: the 2 Modes of Payment (`Paynow Ecocash`, `Paynow OneMoney`)
    exist in ERPNext (created via the UI, per "One-time ERPNext setup"
    above) — there is no setup script to run, since Items already exist
    and Custom Fields are dropped from this integration.

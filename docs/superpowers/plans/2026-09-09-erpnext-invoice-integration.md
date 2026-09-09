@@ -18,7 +18,7 @@
 - POS Profile: `Contact Centre`, with `custom_fiscalise: 1` (ZIMRA fiscal stand-in, per spec).
 - Naming series: `SINV-RET-.YYYY.-`.
 - Package → Item mapping (exact, do not reinterpret — all 5 Items already exist in ERPNext; NONE are ever created by this integration): `1gb`→`electroair0.5` ($0.50), `2gb`→`electroair1` ($1.00), `3gb`→`$2 Hotspot Voucher` ($2.00), `5gb`→`$3 Hotspot Voucher` ($3.00), `10gb`→`electroair5` ($5.00). The invoice line `rate` always comes from the package's own price (`pkg.price`), never from the Item's stored `standard_rate`.
-- Modes of Payment: `Paynow EcoCash`, `Paynow OneMoney` — created once, manually, via the ERPNext UI by a human with access. Not created by any script or by the integration user (no permission).
+- Modes of Payment: `Paynow Ecocash`, `Paynow OneMoney` — created once, manually, via the ERPNext UI by a human with access. Not created by any script or by the integration user (no permission).
 - No Custom Fields on Sales Invoice in this integration. The originally-planned `website_transaction_id`/`website_package_id`/`payment_gateway` fields are dropped: the integration user cannot create Custom Fields (403), and even after a human created them via the ERPNext UI, the underlying DB column never synced (needs a server-side `bench migrate` nobody currently has access to run) — writing to them 500s the entire invoice create. Idempotency is local-only (`transactions.erpnext_invoice_name`).
 - Legacy package ids (`quick`/`day`/`week`/`month`) are never synced — marked `not_required` on first attempt.
 - ERP sync is NEVER synchronous in the payment/WiFi-activation request path. It only ever happens in the recurring sync script.
@@ -426,7 +426,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ```javascript
 const MODE_OF_PAYMENT = {
-  ecocash: 'Paynow EcoCash',
+  ecocash: 'Paynow Ecocash',
   onemoney: 'Paynow OneMoney',
 };
 
@@ -563,7 +563,7 @@ ERPNext chart of items, not this integration).
 Someone with ERPNext UI write access (not the integration user) opens
 ERPNext, searches **"Mode of Payment"**, and creates two records via
 **New**:
-1. **Mode of Payment:** `Paynow EcoCash`, **Type:** `General`
+1. **Mode of Payment:** `Paynow Ecocash`, **Type:** `General`
 2. **Mode of Payment:** `Paynow OneMoney`, **Type:** `General`
 
 This is a plain record insert — unlike Custom Field, Mode of Payment has
@@ -574,9 +574,9 @@ no schema-sync complication; the record is immediately usable.
 ```bash
 MOCK_MODE=false node -e "
 import('./src/services/erpnext.js').then(async (m) => {
-  const r1 = await m.erpRequest('GET', '/api/resource/Mode of Payment/Paynow EcoCash').catch(e => e.message);
+  const r1 = await m.erpRequest('GET', '/api/resource/Mode of Payment/Paynow Ecocash').catch(e => e.message);
   const r2 = await m.erpRequest('GET', '/api/resource/Mode of Payment/Paynow OneMoney').catch(e => e.message);
-  console.log('Paynow EcoCash:', r1?.data ? 'exists' : r1);
+  console.log('Paynow Ecocash:', r1?.data ? 'exists' : r1);
   console.log('Paynow OneMoney:', r2?.data ? 'exists' : r2);
 });
 "
@@ -980,7 +980,7 @@ SSH to the production server, add `ERPNEXT_BASE_URL`, `ERPNEXT_API_KEY`, `ERPNEX
 
 - [ ] **Step 2: Sync the 8 changed/new files to production** (same `scp` approach used for the data-quota-packages deployment): `src/config.js`, `src/services/erpnext.js`, `src/db/index.js`, `src/routes/pay.js`, `scripts/sync-erpnext-invoices.js`, `package.json`, `views/admin/revenue.ejs`, `src/services/analytics/revenue.js`. There is no `scripts/setup-erpnext.js` in this design — Task 6 creates no code (see its rewritten scope: Items already exist, Custom Fields are dropped, Modes of Payment are a manual ERPNext UI step).
 
-- [ ] **Step 3: On production, run `npm install` if `package.json` changed dependencies** (it doesn't in this plan — `undici` is already a dependency — but confirm `node_modules` doesn't need updating before proceeding), then `npm run init-db` (applies Task 3's migration to the real database). Confirm the 2 Modes of Payment (`Paynow EcoCash`, `Paynow OneMoney`) already exist in ERPNext from Task 6's manual step — if not done yet, do it now before proceeding (ERPNext UI, not a script).
+- [ ] **Step 3: On production, run `npm install` if `package.json` changed dependencies** (it doesn't in this plan — `undici` is already a dependency — but confirm `node_modules` doesn't need updating before proceeding), then `npm run init-db` (applies Task 3's migration to the real database). Confirm the 2 Modes of Payment (`Paynow Ecocash`, `Paynow OneMoney`) already exist in ERPNext from Task 6's manual step — if not done yet, do it now before proceeding (ERPNext UI, not a script).
 
 - [ ] **Step 4: Confirm each Mode of Payment's account mapping is configured in ERPNext** (per `createAndSubmitPaymentEntry`'s `paid_to` design in Task 5) — this is a manual step in the ERPNext UI (Mode of Payment > Accounts) that Finance needs to do, not something scriptable without knowing which account they want. Real Payment Entries fail with a clear error until this is done; confirm it before Step 7's real test.
 

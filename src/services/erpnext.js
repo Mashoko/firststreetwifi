@@ -87,8 +87,12 @@ const COMPANY = 'Africom Private Ltd ZiG';
 const CUSTOMER = 'CASH USD';
 const TAX_TEMPLATE = 'Zimbabwe Tax - APLG';
 const POS_PROFILE = 'Contact Centre';
+// Exact ERPNext document names — Frappe's GET /api/resource/<doctype>/<name>
+// is an exact-match lookup, so these must match the real records verbatim.
+// The real record is "Paynow Ecocash" (lowercase after "Eco"), confirmed
+// against the live instance after creation — not "Paynow EcoCash".
 const MODE_OF_PAYMENT = {
-  ecocash: 'Paynow EcoCash',
+  ecocash: 'Paynow Ecocash',
   onemoney: 'Paynow OneMoney',
 };
 
