@@ -26,11 +26,14 @@
     <form method="POST" action="/buy" id="buyForm">
       <input type="hidden" name="packageId" id="packageId" required>
       <div class="packages">
-        <% packages.forEach(function(p){ %>
+        <% packages.forEach(function(p){
+          var days = Math.round(p.minutes / 1440);
+          var durationLabel = days >= 1 ? (days + ' Day' + (days > 1 ? 's' : '')) : Math.round(p.minutes / 60) + ' Hours';
+        %>
           <div class="pkg" data-id="<%= p.id %>" onclick="selectPkg(this)">
             <div>
               <div class="name"><%= p.name %></div>
-              <div class="blurb"><%= p.blurb %></div>
+              <div class="blurb"><%= p.dataGB %>GB · <%= durationLabel %></div>
             </div>
             <div class="price">$<%= p.price.toFixed(2) %></div>
           </div>
