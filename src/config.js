@@ -30,4 +30,10 @@ export const config = {
     user: process.env.ADMIN_USER || '',
     password: process.env.ADMIN_PASSWORD || '',
   },
+
+  erpnext: {
+    baseUrl: (process.env.ERPNEXT_BASE_URL || '').replace(/\/+$/, ''),
+    apiKey: process.env.ERPNEXT_API_KEY || '',
+    apiSecret: process.env.ERPNEXT_API_SECRET || '',
+  },
 };
