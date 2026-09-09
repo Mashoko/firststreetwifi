@@ -38,6 +38,11 @@ async function finalizePaidTransaction(tx) {
       // Voucher still valid; user can retry login page.
     }
   }
+
+  db.prepare(
+    `UPDATE transactions SET erpnext_sync_status='pending', updated_at=datetime('now') WHERE id=?`
+  ).run(tx.id);
+
   return voucherCode;
 }
 
