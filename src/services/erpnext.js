@@ -64,3 +64,44 @@ export async function getLatestExchangeRate(from, to) {
   }
   return { rate: row.exchange_rate, date: row.date };
 }
+
+/**
+ * Idempotency safety net: looks up an existing Sales Invoice by the
+ * website_transaction_id custom field (created by scripts/setup-erpnext.js).
+ * Returns the invoice name if one already exists for this transaction
+ * reference, or null. Used before creating a new invoice so a crash between
+ * "ERPNext created it" and "we recorded that locally" can't double-invoice.
+ */
+export async function findInvoiceByTransactionRef(reference) {
+  if (config.mockMode) {
+    console.log(`[MOCK] ERPNext lookup invoice for transaction: ${reference}`);
+    return null;
+  }
+
+  const filters = encodeURIComponent(JSON.stringify([
+    ['website_transaction_id', '=', reference],
+  ]));
+  const data = await erpRequest(
+    'GET',
+    `/api/resource/Sales Invoice?filters=${filters}&fields=["name"]&limit_page_length=1`
+  );
+  return data?.data?.[0]?.name || null;
+}
+
+/**
+ * Confirms a mapped Item Code actually exists in ERPNext before the sync
+ * script attempts to invoice against it — a missing Item should fail
+ * clearly, not silently create a broken invoice line.
+ */
+export async function getItemByCode(itemCode) {
+  if (config.mockMode) {
+    console.log(`[MOCK] ERPNext lookup item: ${itemCode}`);
+    return true;
+  }
+
+  const data = await erpRequest('GET', `/api/resource/Item/${encodeURIComponent(itemCode)}`).catch((err) => {
+    if (String(err.message).includes('404')) return null;
+    throw err;
+  });
+  return !!data?.data;
+}
