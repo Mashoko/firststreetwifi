@@ -15,7 +15,7 @@ async function finalizePaidTransaction(tx) {
   // Generate voucher if not already done.
   let voucherCode = tx.voucher_code;
   if (!voucherCode) {
-    const v = createVoucher({ packageId: pkg.id, minutes: pkg.minutes, transactionId: tx.id });
+    const v = createVoucher({ packageId: pkg.id, minutes: pkg.minutes, dataBytes: pkg.dataBytes, transactionId: tx.id });
     voucherCode = v.code;
     db.prepare(`UPDATE transactions SET status='paid', voucher_code=?, updated_at=datetime('now') WHERE id=?`)
       .run(voucherCode, tx.id);
@@ -31,7 +31,7 @@ async function finalizePaidTransaction(tx) {
   };
   if (clientInfo.clientMac) {
     try {
-      await authorizeClient(clientInfo, pkg.minutes);
+      await authorizeClient(clientInfo, pkg.minutes, pkg.dataBytes);
       markVoucherUsed(voucherCode, pkg.minutes);
     } catch (err) {
       console.error('Omada authorize error:', err.message);
@@ -47,14 +47,16 @@ payRouter.get('/status/:reference', async (req, res) => {
   if (!tx) return res.status(404).json({ status: 'not_found' });
 
   if (tx.status === 'paid' && tx.voucher_code) {
-    return res.json({ status: 'paid', voucher: tx.voucher_code });
+    const paidPkg = getPackage(tx.package_id);
+    return res.json({ status: 'paid', voucher: tx.voucher_code, dataGB: paidPkg?.dataGB, name: paidPkg?.name });
   }
 
   try {
     const result = await pollPayment(tx.poll_url);
     if (result.paid) {
       const voucher = await finalizePaidTransaction(tx);
-      return res.json({ status: 'paid', voucher });
+      const paidPkg = getPackage(tx.package_id);
+      return res.json({ status: 'paid', voucher, dataGB: paidPkg?.dataGB, name: paidPkg?.name });
     }
     return res.json({ status: 'pending', paynowStatus: result.status });
   } catch (err) {
