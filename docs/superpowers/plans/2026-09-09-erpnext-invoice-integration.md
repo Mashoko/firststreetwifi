@@ -4,7 +4,7 @@
 
 **Goal:** Every successful hotspot purchase creates a real, submitted, paid Sales Invoice (+ Payment Entry) in ERPNext, without ever delaying or risking a customer's actual WiFi access.
 
-**Architecture:** A new `src/services/erpnext.js` client (same shape as the existing `omada.js`/`paynow.js` services) provides the ERPNext operations. `finalizePaidTransaction()` in `pay.js` only marks a transaction `erpnext_sync_status='pending'` — no synchronous ERPNext call in the request path at all. A new recurring script, `scripts/sync-erpnext-invoices.js` (same pattern as the existing `scripts/check-connected-clients.js`), run via cron, does the actual invoice/payment creation with retry/backoff. A separate one-time script, `scripts/setup-erpnext.js`, creates the 5 Items/3 Custom Fields/2 Payment Modes the sync script depends on.
+**Architecture:** A new `src/services/erpnext.js` client (same shape as the existing `omada.js`/`paynow.js` services) provides the ERPNext operations. `finalizePaidTransaction()` in `pay.js` only marks a transaction `erpnext_sync_status='pending'` — no synchronous ERPNext call in the request path at all. A new recurring script, `scripts/sync-erpnext-invoices.js` (same pattern as the existing `scripts/check-connected-clients.js`), run via cron, does the actual invoice/payment creation with retry/backoff, reusing 5 existing ERPNext Items (never creating Items). The 2 Modes of Payment the sync script depends on are created once, manually, via the ERPNext UI — there is no setup script, because the integration user has no Create permission on Item, Custom Field, or Mode of Payment (confirmed 403 on all three; least-privilege scoping, not a gap to work around). The 3 custom fields originally planned on Sales Invoice are dropped from this integration for now — see spec for the schema-sync blocker.
 
 **Tech Stack:** Node.js (ESM), Express, better-sqlite3, `undici` (already a dependency, used for the same TLS/dispatcher pattern as `omada.js`). No test framework — manual verification, matching this project's established convention.
 
@@ -17,12 +17,13 @@
 - Tax template: `Zimbabwe Tax - APLG` (not the flagged-default `vat output - APLG` — verified against real retail invoices).
 - POS Profile: `Contact Centre`, with `custom_fiscalise: 1` (ZIMRA fiscal stand-in, per spec).
 - Naming series: `SINV-RET-.YYYY.-`.
-- Package → Item mapping (exact, do not reinterpret): `1gb`→`HOTSPOT-1GB-1D` ($0.50), `2gb`→`HOTSPOT-2GB-1D` ($1.00), `3gb`→`HOTSPOT-3GB-7D` ($2.00), `5gb`→`HOTSPOT-5GB-14D` ($3.00), `10gb`→`HOTSPOT-10GB-30D` ($5.00). All Item Group `Airtime`, non-stock.
-- Modes of Payment: `Paynow EcoCash`, `Paynow OneMoney` (new).
+- Package → Item mapping (exact, do not reinterpret — all 5 Items already exist in ERPNext; NONE are ever created by this integration): `1gb`→`electroair0.5` ($0.50), `2gb`→`electroair1` ($1.00), `3gb`→`$2 Hotspot Voucher` ($2.00), `5gb`→`$3 Hotspot Voucher` ($3.00), `10gb`→`electroair5` ($5.00). The invoice line `rate` always comes from the package's own price (`pkg.price`), never from the Item's stored `standard_rate`.
+- Modes of Payment: `Paynow EcoCash`, `Paynow OneMoney` — created once, manually, via the ERPNext UI by a human with access. Not created by any script or by the integration user (no permission).
+- No Custom Fields on Sales Invoice in this integration. The originally-planned `website_transaction_id`/`website_package_id`/`payment_gateway` fields are dropped: the integration user cannot create Custom Fields (403), and even after a human created them via the ERPNext UI, the underlying DB column never synced (needs a server-side `bench migrate` nobody currently has access to run) — writing to them 500s the entire invoice create. Idempotency is local-only (`transactions.erpnext_invoice_name`).
 - Legacy package ids (`quick`/`day`/`week`/`month`) are never synced — marked `not_required` on first attempt.
 - ERP sync is NEVER synchronous in the payment/WiFi-activation request path. It only ever happens in the recurring sync script.
 - Credentials (`ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`) never logged, never sent to the frontend, never committed to git.
-- Item/Custom Field/Mode of Payment creation happens ONLY in the one-time setup script, never in the recurring sync script.
+- No Item, Custom Field, or Mode of Payment creation anywhere in this codebase's code — confirmed via real API tests that the integration user gets 403 on Create for all three; this is intentional least-privilege scoping to preserve. Never request broader permissions or use Administrator credentials to work around it.
 
 ---
 
@@ -161,6 +162,18 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ### Task 2: ERPNext client — invoice lookup and item validation
 
+> **Correction (post-implementation, architecture ruling):** this task's
+> code was implemented and committed as originally written, including
+> `findInvoiceByTransactionRef`. That function is now dropped — see the
+> Global Constraints and the spec's "Custom fields dropped" section. The
+> function queried the `website_transaction_id` custom field, which never
+> got a real database column (confirmed via direct testing); the
+> ERPNext-side idempotency cross-check it existed for is retired along
+> with it. `getItemByCode` is unaffected and remains in use (Task 7 uses
+> it as a pre-flight existence check on the mapped Item Code, never to
+> create one). The removal of `findInvoiceByTransactionRef` is folded into
+> Task 4's corrective edit below rather than given its own task.
+
 **Files:**
 - Modify: `src/services/erpnext.js`
 
@@ -298,6 +311,19 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ### Task 4: ERPNext client — create and submit a Sales Invoice
 
+> **Correction (post-implementation, architecture ruling):** this task
+> was originally implemented with 3 extra fields on the create payload —
+> `website_transaction_id`, `website_package_id`, `payment_gateway` — for
+> the custom fields Task 6 was going to create. Those custom fields are
+> now dropped from this integration entirely (see Global Constraints):
+> the underlying DB columns never got created even after a human made the
+> Custom Field records via the ERPNext UI (confirmed 500
+> `Unknown column` on write), and the integration user can't create
+> Custom Fields itself (403) to try again a different way. **Corrective
+> edit required on the already-committed code:** remove those 3 fields
+> from the request body below — this is the one code change this
+> correction requires; nothing else in this task changes.
+
 **Files:**
 - Modify: `src/services/erpnext.js`
 
@@ -305,7 +331,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Consumes: `erpRequest`, `getLatestExchangeRate` (Task 1)
 - Produces: `createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB })` → the invoice `name` string.
 
-- [ ] **Step 1: Add this function to `src/services/erpnext.js`**
+- [ ] **Step 1: Add this function to `src/services/erpnext.js`** (shown here in corrected form — no `website_transaction_id`/`website_package_id`/`payment_gateway` fields)
 
 ```javascript
 const COMPANY = 'Africom Private Ltd ZiG';
@@ -319,6 +345,12 @@ const POS_PROFILE = 'Contact Centre';
  * is a separate PUT setting docstatus to 1, which is what actually triggers
  * ERPNext's submit-time validation/side-effects (including, per the real
  * invoices inspected during design, ZIMRA fiscalisation).
+ *
+ * `packageId` and `dataGB` are accepted but currently unused in the request
+ * body — they were going to populate `website_package_id` and a data-size
+ * note on the custom fields dropped from this integration (see Global
+ * Constraints). Kept in the signature/call site so Task 7 doesn't need to
+ * change again when the custom-field follow-up lands.
  */
 export async function createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB }) {
   if (config.mockMode) {
@@ -338,9 +370,6 @@ export async function createAndSubmitInvoice({ reference, packageId, itemCode, a
     pos_profile: POS_PROFILE,
     custom_fiscalise: 1,
     taxes_and_charges: TAX_TEMPLATE,
-    website_transaction_id: reference,
-    website_package_id: packageId,
-    payment_gateway: 'Paynow',
     items: [
       {
         item_code: itemCode,
@@ -371,7 +400,7 @@ import('./src/services/erpnext.js').then(async (m) => {
 });
 "` — expect a `[MOCK]` log line and a `MOCK-SINV-FSW-test-1` return value, no real HTTP call.
 
-Do not run this against real credentials yet — the `HOTSPOT-1GB-1D` Item doesn't exist in ERPNext until Task 6's setup script runs, and creating a real invoice against a missing Item would fail (or worse, if this instance's validation is lax, could create a malformed one). Real-credential testing of this function happens in Task 7's verification, after Task 6.
+Do not run this against real credentials as part of this task — a real call creates a real draft/submitted Sales Invoice in the live company books, which should happen deliberately, once, as part of Task 7's end-to-end verification (now that the mapped Items — `electroair0.5` etc. — already exist and need no setup step), not as a side effect of testing this function in isolation.
 
 - [ ] **Step 3: Commit**
 
@@ -406,9 +435,10 @@ const MODE_OF_PAYMENT = {
  * Invoice, marking it paid. `paid_to` (which GL account the money lands in)
  * is intentionally NOT hardcoded here — it's read from the Mode of
  * Payment's own account mapping for this company, which Finance configures
- * directly in ERPNext (see scripts/setup-erpnext.js). If that mapping is
- * missing, this throws a clear, actionable error rather than guessing an
- * account.
+ * directly in ERPNext (Mode of Payment is created manually via the ERPNext
+ * UI — see the spec's "One-time ERPNext setup" section; there is no setup
+ * script). If that mapping is missing, this throws a clear, actionable
+ * error rather than guessing an account.
  */
 export async function createAndSubmitPaymentEntry({ invoiceName, amount, method, reference }) {
   const modeOfPayment = MODE_OF_PAYMENT[method] || MODE_OF_PAYMENT.ecocash;
@@ -477,7 +507,7 @@ import('./src/services/erpnext.js').then(async (m) => {
 });
 "` — expect a `[MOCK]` log line and a `MOCK-PE-FSW-test-1` return value.
 
-Real-credential testing happens in Task 7, after the Modes of Payment exist (Task 6) and have their account mapping configured (which requires Finance's input — flag this explicitly if you reach Task 7 and the account mapping isn't set yet; don't guess an account).
+Real-credential testing happens in Task 7, after the 2 Modes of Payment exist (created manually via the ERPNext UI — see Task 6) and have their account mapping configured (which requires Finance's input — flag this explicitly if you reach Task 7 and the account mapping isn't set yet; don't guess an account).
 
 - [ ] **Step 3: Commit**
 
@@ -490,143 +520,80 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 6: One-time ERPNext setup script
+### Task 6: One-time ERPNext setup — verify, don't create
 
-**Files:**
-- Create: `scripts/setup-erpnext.js`
-- Modify: `src/services/erpnext.js` (add 3 small `ensure*` helper functions this script uses)
-- Modify: `package.json` (add an `setup-erpnext` script entry, same pattern as the existing `check-clients` entry)
+> **Correction (post-implementation, architecture ruling):** this task was
+> originally a setup *script* that created 5 Items, 3 Custom Fields, and 2
+> Modes of Payment via the integration user's credentials. Real testing
+> found the integration user gets 403 (Create) on all three doctypes —
+> confirmed, not assumed, and confirmed as intentional least-privilege
+> scoping by Africom's ERPNext admin, not a gap to patch by requesting
+> more access. The corrected task has no script and no code to write:
+> Items already exist and are reused as-is (no creation, ever); Custom
+> Fields are dropped from this integration entirely (see Global
+> Constraints); Modes of Payment are created once, manually, by a human
+> with ERPNext UI access. This task is now a verification checklist plus
+> one human action outside this codebase.
+
+**Files:** none (no code changes in this task).
 
 **Interfaces:**
-- Consumes: `erpRequest` (Task 1)
-- Produces: `ensureItem({itemCode, itemName, rate})`, `ensureCustomField({doctype, fieldname, label})`, `ensureModeOfPayment(name)` — each idempotent (checks existence first), each returning `{created: boolean, name: string}`.
+- Consumes: `getItemByCode` (Task 2) for the verification step below.
+- Produces: nothing new — confirms the preconditions Task 7 depends on.
 
-- [ ] **Step 1: Add the 3 `ensure*` functions to `src/services/erpnext.js`**
-
-```javascript
-/** Idempotent: creates the Item only if it doesn't already exist. */
-export async function ensureItem({ itemCode, itemName, rate }) {
-  const exists = await getItemByCode(itemCode);
-  if (exists) return { created: false, name: itemCode };
-
-  await erpRequest('POST', '/api/resource/Item', {
-    item_code: itemCode,
-    item_name: itemName,
-    item_group: 'Airtime',
-    stock_uom: 'Nos',
-    is_stock_item: 0,
-    is_sales_item: 1,
-    is_purchase_item: 0,
-    standard_rate: rate,
-  });
-  return { created: true, name: itemCode };
-}
-
-/** Idempotent: creates a simple Data-type Custom Field on a doctype if missing. */
-export async function ensureCustomField({ doctype, fieldname, label }) {
-  const existing = await erpRequest(
-    'GET',
-    `/api/resource/Custom Field?filters=${encodeURIComponent(JSON.stringify([['dt', '=', doctype], ['fieldname', '=', fieldname]]))}&limit_page_length=1`
-  );
-  if (existing?.data?.[0]) return { created: false, name: existing.data[0].name };
-
-  const created = await erpRequest('POST', '/api/resource/Custom Field', {
-    dt: doctype,
-    fieldname,
-    label,
-    fieldtype: 'Data',
-  });
-  return { created: true, name: created?.data?.name };
-}
-
-/** Idempotent: creates a Mode of Payment if missing. Does NOT configure its
- * account mapping — that's a Finance decision, done manually in ERPNext
- * after this script creates the bare record (see createAndSubmitPaymentEntry,
- * which fails clearly if the mapping is still missing when a real payment
- * needs it). */
-export async function ensureModeOfPayment(name) {
-  const existing = await erpRequest('GET', `/api/resource/Mode of Payment/${encodeURIComponent(name)}`).catch((err) => {
-    if (String(err.message).includes('404')) return null;
-    throw err;
-  });
-  if (existing?.data) return { created: false, name };
-
-  await erpRequest('POST', '/api/resource/Mode of Payment', {
-    mode_of_payment: name,
-    type: 'General',
-  });
-  return { created: true, name };
-}
-```
-
-- [ ] **Step 2: Create `scripts/setup-erpnext.js`**
-
-```javascript
-import { config } from '../src/config.js';
-import { ensureItem, ensureCustomField, ensureModeOfPayment } from '../src/services/erpnext.js';
-
-console.error(config.mockMode ? '[MOCK MODE] no real ERPNext calls will be made' : `[LIVE] ${config.erpnext.baseUrl}`);
-
-const ITEMS = [
-  { itemCode: 'HOTSPOT-1GB-1D', itemName: 'Hotspot 1GB Data (1 Day)', rate: 0.50 },
-  { itemCode: 'HOTSPOT-2GB-1D', itemName: 'Hotspot 2GB Data (1 Day)', rate: 1.00 },
-  { itemCode: 'HOTSPOT-3GB-7D', itemName: 'Hotspot 3GB Data (7 Days)', rate: 2.00 },
-  { itemCode: 'HOTSPOT-5GB-14D', itemName: 'Hotspot 5GB Data (14 Days)', rate: 3.00 },
-  { itemCode: 'HOTSPOT-10GB-30D', itemName: 'Hotspot 10GB Data (30 Days)', rate: 5.00 },
-];
-
-const CUSTOM_FIELDS = [
-  { doctype: 'Sales Invoice', fieldname: 'website_transaction_id', label: 'Website Transaction ID' },
-  { doctype: 'Sales Invoice', fieldname: 'website_package_id', label: 'Website Package ID' },
-  { doctype: 'Sales Invoice', fieldname: 'payment_gateway', label: 'Payment Gateway' },
-];
-
-const MODES_OF_PAYMENT = ['Paynow EcoCash', 'Paynow OneMoney'];
-
-for (const item of ITEMS) {
-  const result = await ensureItem(item);
-  console.log(`Item ${item.itemCode}: ${result.created ? 'created' : 'already exists'}`);
-}
-
-for (const field of CUSTOM_FIELDS) {
-  const result = await ensureCustomField(field);
-  console.log(`Custom Field ${field.doctype}.${field.fieldname}: ${result.created ? 'created' : 'already exists'}`);
-}
-
-for (const mode of MODES_OF_PAYMENT) {
-  const result = await ensureModeOfPayment(mode);
-  console.log(`Mode of Payment ${mode}: ${result.created ? 'created' : 'already exists'}`);
-}
-
-console.log('\nDone. If any Modes of Payment were just created, Finance still needs to');
-console.log('configure their default account (Mode of Payment > Accounts) in ERPNext');
-console.log('before real Payment Entries can be created against them.');
-```
-
-- [ ] **Step 3: Add the npm script entry to `package.json`**, in the `"scripts"` block, alongside the existing `"check-clients"` entry:
-
-```json
-    "setup-erpnext": "node scripts/setup-erpnext.js",
-```
-
-- [ ] **Step 4: Verify manually — mock mode**
-
-`MOCK_MODE=true npm run setup-erpnext` — expect `[MOCK MODE]` header, then `[MOCK] ...` lines for each of the 10 operations (5 items + 3 fields + 2 modes), completing without error.
-
-- [ ] **Step 5: Verify manually — real credentials**
-
-`MOCK_MODE=false npm run setup-erpnext` — expect `[LIVE] https://erp.ai.co.zw`, then real "created" lines for everything (first run) — this is the first real confirmation that the integration user has *write* access to Item, Custom Field, and Mode of Payment, not just read (which is all that was confirmed during design). If any step fails with a permission error, report that clearly — do not attempt to work around it by switching credentials or guessing at different field names.
-
-Run it a **second time** immediately after: `MOCK_MODE=false npm run setup-erpnext` — expect every line to now say "already exists", confirming idempotency (nothing duplicated).
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 1: Confirm the 5 mapped Items are readable with real credentials**
 
 ```bash
-git add src/services/erpnext.js scripts/setup-erpnext.js package.json
-git commit -m "feat: add one-time ERPNext setup script for items, fields, payment modes
-
-Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+MOCK_MODE=false node -e "
+import('./src/services/erpnext.js').then(async (m) => {
+  for (const code of ['electroair0.5', 'electroair1', '\$2 Hotspot Voucher', '\$3 Hotspot Voucher', 'electroair5']) {
+    console.log(code, '→', await m.getItemByCode(code));
+  }
+});
+"
 ```
+
+Expected: `true` for all 5. If any come back `false`, stop — report the
+missing Item Code rather than creating one (this integration has no Item
+Create permission, and creating one is a decision for whoever owns the
+ERPNext chart of items, not this integration).
+
+- [ ] **Step 2: Human action (outside this codebase) — create the 2 Modes of Payment**
+
+Someone with ERPNext UI write access (not the integration user) opens
+ERPNext, searches **"Mode of Payment"**, and creates two records via
+**New**:
+1. **Mode of Payment:** `Paynow EcoCash`, **Type:** `General`
+2. **Mode of Payment:** `Paynow OneMoney`, **Type:** `General`
+
+This is a plain record insert — unlike Custom Field, Mode of Payment has
+no schema-sync complication; the record is immediately usable.
+
+- [ ] **Step 3: Confirm both Modes of Payment are readable with real credentials**
+
+```bash
+MOCK_MODE=false node -e "
+import('./src/services/erpnext.js').then(async (m) => {
+  const r1 = await m.erpRequest('GET', '/api/resource/Mode of Payment/Paynow EcoCash').catch(e => e.message);
+  const r2 = await m.erpRequest('GET', '/api/resource/Mode of Payment/Paynow OneMoney').catch(e => e.message);
+  console.log('Paynow EcoCash:', r1?.data ? 'exists' : r1);
+  console.log('Paynow OneMoney:', r2?.data ? 'exists' : r2);
+});
+"
+```
+
+(`erpRequest` needs to be exported from `src/services/erpnext.js` for this
+one-off check — if it isn't already, export it; it's the same generic
+helper every other function in the module already uses internally.)
+
+Expected: both `exists`. Their account mapping (which GL account money
+lands in) does not need to be configured yet for this step — only for
+Task 7's real Payment Entry test — but flag to Finance if it's still
+missing when you reach that point.
+
+- [ ] **Step 4: No commit** — this task changes no files. Record in the
+  SDD ledger that Task 6 completed as a verification-only task, with the
+  real output of Steps 1 and 3.
 
 ---
 

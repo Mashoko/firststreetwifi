@@ -66,32 +66,6 @@ export async function getLatestExchangeRate(from, to) {
 }
 
 /**
- * Idempotency safety net: looks up an existing Sales Invoice by the
- * website_transaction_id custom field (created by scripts/setup-erpnext.js).
- * Returns the invoice name if one already exists for this transaction
- * reference, or null. Used before creating a new invoice so a crash between
- * "ERPNext created it" and "we recorded that locally" can't double-invoice.
- */
-export async function findInvoiceByTransactionRef(reference) {
-  if (config.mockMode) {
-    console.log(`[MOCK] ERPNext lookup invoice for transaction: ${reference}`);
-    return null;
-  }
-
-  const filters = encodeURIComponent(JSON.stringify([
-    ['website_transaction_id', '=', reference],
-  ]));
-  const data = await erpRequest(
-    'GET',
-    `/api/resource/Sales Invoice?filters=${filters}&fields=["name"]&limit_page_length=1`
-  ).catch((err) => {
-    if (String(err.message).includes('Field not permitted in query')) return null;
-    throw err;
-  });
-  return data?.data?.[0]?.name || null;
-}
-
-/**
  * Confirms a mapped Item Code actually exists in ERPNext before the sync
  * script attempts to invoice against it — a missing Item should fail
  * clearly, not silently create a broken invoice line.
@@ -124,6 +98,19 @@ const MODE_OF_PAYMENT = {
  * is a separate PUT setting docstatus to 1, which is what actually triggers
  * ERPNext's submit-time validation/side-effects (including, per the real
  * invoices inspected during design, ZIMRA fiscalisation).
+ *
+ * `packageId` and `dataGB` are accepted but currently unused in the request
+ * body. An earlier version of this function also wrote
+ * `website_transaction_id`/`website_package_id`/`payment_gateway` custom
+ * fields — those are dropped: the integration user can't create Custom
+ * Fields (403), and even after a human created them via the ERPNext UI,
+ * the underlying DB column never got added (a real write attempt 500s with
+ * `Unknown column`, confirmed by direct testing) — this instance needs a
+ * server-side schema migration nobody currently has access to run.
+ * Idempotency for this integration relies solely on the local
+ * `transactions.erpnext_invoice_name` column. `packageId`/`dataGB` stay in
+ * the signature so callers don't need to change again once that follow-up
+ * lands.
  */
 export async function createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB }) {
   if (config.mockMode) {
@@ -143,9 +130,6 @@ export async function createAndSubmitInvoice({ reference, packageId, itemCode, a
     pos_profile: POS_PROFILE,
     custom_fiscalise: 1,
     taxes_and_charges: TAX_TEMPLATE,
-    website_transaction_id: reference,
-    website_package_id: packageId,
-    payment_gateway: 'Paynow',
     items: [
       {
         item_code: itemCode,
@@ -172,9 +156,10 @@ export async function createAndSubmitInvoice({ reference, packageId, itemCode, a
  * Invoice, marking it paid. `paid_to` (which GL account the money lands in)
  * is intentionally NOT hardcoded here — it's read from the Mode of
  * Payment's own account mapping for this company, which Finance configures
- * directly in ERPNext (see scripts/setup-erpnext.js). If that mapping is
- * missing, this throws a clear, actionable error rather than guessing an
- * account.
+ * directly in ERPNext (Mode of Payment is created manually, once, via the
+ * ERPNext UI — the integration user has no Create permission on it and
+ * there is no setup script). If that mapping is missing, this throws a
+ * clear, actionable error rather than guessing an account.
  */
 export async function createAndSubmitPaymentEntry({ invoiceName, amount, method, reference }) {
   const modeOfPayment = MODE_OF_PAYMENT[method] || MODE_OF_PAYMENT.ecocash;

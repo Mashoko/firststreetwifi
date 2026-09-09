@@ -11,11 +11,28 @@ the portal itself sells access or activates a customer's WiFi.
 ## Findings from the live ERPNext instance (not assumed — verified via API)
 
 An integration user (`hotspot.integration@afri-com.net`) and its API
-key/secret already exist and were verified read-capable against Customer,
-Item, Sales Invoice, and Payment Entry (`GET` 200 on all four; write access
-to be confirmed by the first real test invoice, per Testing below — the
-brief explicitly forbids a destructive test to confirm this in advance).
-Frappe 16.32.0 / ERPNext 16.32.3.
+key/secret already exist. Frappe 16.32.0 / ERPNext 16.32.3.
+
+**Real write-permission testing (superseding the original design-phase
+read-only check) found this user has a deliberately narrow, already
+least-privileged role:**
+
+| Doctype | Create | Notes |
+|---|---|---|
+| Item | ❌ 403 | |
+| Custom Field | ❌ 403 | |
+| Mode of Payment | ❌ 403 | |
+| Sales Invoice | ✅ Works | Draft created successfully; a later submit attempt hit a real accounting validation, not a permission error |
+| Payment Entry | ✅ Works | A create attempt correctly failed only on "invoice must be submitted first" — a real dependency validation, not a permission error |
+
+This is intentional scoping, not a gap to patch by requesting broader
+access: someone at Africom already restricted this integration user to
+exactly the transactional flow it needs (Sales Invoice + Payment Entry)
+while withholding master-data creation. **The correct response is to work
+within that boundary — reuse existing master data, never request Item/
+Custom Field/Mode of Payment write access for this user.** This reverses
+the original design's plan to have the integration create 5 new Items —
+see the corrected Package → Item mapping below.
 
 - **This is a multi-company, multi-currency instance.** 8 companies exist,
   none defaulting to USD (all ZWL or ZWG) — but multi-currency invoicing
@@ -27,11 +44,17 @@ Frappe 16.32.0 / ERPNext 16.32.3.
   default cost center `"200 - Africom Retail - APLG"` — and real invoices
   using the `SINV-RET-*` naming series are actively posted against it today,
   in USD.
-- **Existing `$1`–`$5 Hotspot Voucher` Items are the wrong fit and are not
-  reused.** They're `is_stock_item: 1` (physical stock-tracked cards, with an
-  `opening_stock` count) at different price points than the current 5
-  packages. This integration creates 5 new non-stock, service-type Items
-  instead (table below).
+- **Existing `$1`–`$5 Hotspot Voucher` Items are stock-tracked physical
+  vouchers at the wrong price points** — not used for this integration.
+  Instead, a real, already-existing non-stock `electroair*` ("Electronic
+  Airtime Voucher") family covers 3 of the 5 packages exactly by price
+  (`electroair0.5`, `electroair1`, `electroair5`); the 3GB/5GB packages
+  map to the `$2`/`$3 Hotspot Voucher` items instead (see the corrected
+  mapping table below) — these are stock-tracked, but every invoice line's
+  `rate` is always the actual transaction amount from our own database,
+  never read from the Item's `standard_rate`, so the Item's odd stored
+  rate (2.60/3.46, likely a cost-basis figure) never reaches a real
+  invoice. No Items are created by this integration, at all, ever.
 - **Exchange rate is already solved by ERPNext itself.** A `Currency
   Exchange` doctype holds a daily-updated USD→ZWG rate (verified: 5 most
   recent days all present, one per day). The sync fetches the latest one at
@@ -60,8 +83,30 @@ Frappe 16.32.0 / ERPNext 16.32.3.
   follow-up, not solved here.
 - **No `OneMoney` (or generic `Paynow`) Mode of Payment exists** — only
   various `Ecocash` variants tied to specific shops/tills. Two new Modes of
-  Payment are created: `Paynow EcoCash`, `Paynow OneMoney`.
+  Payment are needed: `Paynow EcoCash`, `Paynow OneMoney` — created directly
+  in the ERPNext UI by a user with proper access (the integration user
+  cannot create Mode of Payment records, confirmed above), not by this
+  integration's code.
 - **Naming series: `SINV-RET-.YYYY.-`** — the real retail series, reused as-is.
+- **The `website_transaction_id`/`website_package_id`/`payment_gateway`
+  Custom Fields on Sales Invoice are dropped from this integration
+  entirely (for now).** A real attempt to create them hit the same 403 as
+  Item/Mode of Payment. They were then created directly via the ERPNext UI
+  (which a Custom Field record *can* be created through, unlike via the
+  API user), but the underlying database column never actually got added —
+  this specific ERPNext instance does not auto-migrate schema changes on
+  Custom Field save (a real, and sensible, safety measure for a live
+  financial system); it needs an explicit `bench migrate` (or equivalent)
+  server-side, which needs someone with hosting/server access, not just
+  ERPNext UI access. A real test confirmed that *writing* to one of these
+  fields during invoice creation currently fails the entire create call
+  (`MySQLdb.OperationalError: Unknown column`) — not a graceful "field
+  ignored," a hard failure. **Decision: do not set these fields at all for
+  now.** Idempotency relies solely on this app's own `transactions.
+  erpnext_invoice_name` column (already reliable for the normal case);
+  the ERPNext-side "search by transaction reference" secondary safety net
+  is dropped along with the fields it depended on. Re-adding both is a
+  small, self-contained follow-up once the schema migration runs.
 
 ## Decisions made during brainstorming
 
@@ -91,21 +136,25 @@ Frappe 16.32.0 / ERPNext 16.32.3.
 
 ## Package → Item mapping
 
-| Package id | Item Code | Item Name | Item Group | Price (USD) |
-|---|---|---|---|---:|
-| `1gb` | `HOTSPOT-1GB-1D` | Hotspot 1GB Data (1 Day) | Airtime | 0.50 |
-| `2gb` | `HOTSPOT-2GB-1D` | Hotspot 2GB Data (1 Day) | Airtime | 1.00 |
-| `3gb` | `HOTSPOT-3GB-7D` | Hotspot 3GB Data (7 Days) | Airtime | 2.00 |
-| `5gb` | `HOTSPOT-5GB-14D` | Hotspot 5GB Data (14 Days) | Airtime | 3.00 |
-| `10gb` | `HOTSPOT-10GB-30D` | Hotspot 10GB Data (30 Days) | Airtime | 5.00 |
+All 5 Items already exist in ERPNext — none are created by this
+integration, ever. The mapping below reuses the closest existing Item per
+package; each Item's own stored `standard_rate` is irrelevant and never
+read — the invoice line `rate` is always set explicitly from `pkg.price`
+(the price this app actually charged), never from the Item.
 
-These 5 Items are created once, by a dedicated one-time setup script (see
-"One-time ERPNext setup" below) — never by the recurring sync script. The
-sync script must not assume they already exist and should fail clearly
-(not silently) if a mapped Item Code is missing, rather than attempting to
-create one mid-sync (creating full Item records with the right
-group/stock/pricing settings is exactly the kind of thing that should
-happen once, reviewed, not repeatedly on every cron tick).
+| Package id | Item Code | Item's own list price | Price actually invoiced (USD) |
+|---|---|---:|---:|
+| `1gb` | `electroair0.5` | 0.50 | 0.50 |
+| `2gb` | `electroair1` | 1.00 | 1.00 |
+| `3gb` | `$2 Hotspot Voucher` | (odd/stale) | 2.00 |
+| `5gb` | `$3 Hotspot Voucher` | (odd/stale) | 3.00 |
+| `10gb` | `electroair5` | 5.00 | 5.00 |
+
+The sync script must not assume a mapped Item Code exists and should fail
+clearly (not silently) if ERPNext ever reports it missing — that's a
+signal someone renamed/deleted an Item on the ERPNext side, not something
+to paper over by creating a replacement (this integration has no Item
+Create permission at all, so it couldn't even if it wanted to).
 
 Legacy package ids (`quick`/`day`/`week`/`month`, from before the
 data-quota-packages change) have no ERPNext Item mapping and are not
@@ -166,13 +215,11 @@ minutes):
    1min/5min/15min per attempt count — hasn't arrived yet).
 2. For each transaction, in one ERPNext "session" (login once, reuse the
    session across all rows in this run — see Client below):
-   - **Idempotency check first:** if `tx.erpnext_invoice_name` is already
-     set, skip (already done, shouldn't be in the pending/failed query
-     result at all, but a cheap belt-and-suspenders check). Then query
-     ERPNext directly for an existing Sales Invoice with a custom field
-     `website_transaction_id = tx.reference` — if found, adopt its name
-     onto the local row instead of creating a duplicate (covers a crash
-     between "ERPNext created the invoice" and "we recorded that locally").
+   - **Idempotency check:** if `tx.erpnext_invoice_name` is already set,
+     skip — already done, shouldn't be in the pending/failed query result
+     at all, but a cheap belt-and-suspenders check. This local check is
+     the *only* idempotency mechanism (see "Custom fields dropped" note
+     below for why there is no ERPNext-side cross-check).
    - Resolve `pkg = getPackage(tx.package_id)`. If `pkg` has no Item
      mapping (a legacy package id), mark `erpnext_sync_status='not_required'`
      and move on — never attempted, never retried.
@@ -181,9 +228,8 @@ minutes):
      Private Ltd ZiG`, currency `USD`, the fetched `conversion_rate`, one
      line item (the mapped Item Code, qty 1, rate = `pkg.price`), tax
      template `Zimbabwe Tax - APLG`, `is_pos: 1`, `pos_profile: "Contact
-     Centre"`, `custom_fiscalise: 1`, plus custom fields
-     `website_transaction_id` (= `tx.reference`), `website_package_id`
-     (= `tx.package_id`), `payment_gateway` (= `"Paynow"`).
+     Centre"`, `custom_fiscalise: 1`. No `website_transaction_id`/
+     `website_package_id`/`payment_gateway` fields are set — see below.
    - Submit it (`docstatus: 1`).
    - Create a Payment Entry against it: amount = `tx.amount`, mode of
      payment = `"Paynow EcoCash"` or `"Paynow OneMoney"` depending on
@@ -201,32 +247,60 @@ minutes):
    to stdout, which PM2/cron capture the same way this project's other
    scripts already do — no new logging infrastructure.
 
-**Custom fields on Sales Invoice** — `website_transaction_id`,
-`website_package_id`, `payment_gateway` need to exist in ERPNext before the
-first sync can set them. Created by the same one-time setup script as the
-Items — the sync script does not create these on the fly.
+**Custom fields dropped from this integration (for now).** The original
+design put `website_transaction_id`, `website_package_id`, and
+`payment_gateway` on Sales Invoice, both to carry useful cross-reference
+data and to give the sync script a second, ERPNext-side idempotency check
+(look up an existing invoice by `website_transaction_id` before creating a
+new one). Real testing on the live instance found:
 
-## One-time ERPNext setup — `scripts/setup-erpnext.js`
+- The integration user cannot create Custom Fields (403, same as Item and
+  Mode of Payment) — consistent with the least-privilege scoping described
+  above.
+- A user with ERPNext UI access created the 3 fields directly (the UI
+  auto-prefixes fieldnames to `custom_website_transaction_id`, etc.), but
+  the underlying database column was never actually added — this instance
+  does not auto-migrate schema on Custom Field save, and needs a
+  server-side `bench migrate` (or equivalent) that only someone with
+  server/hosting access can run, not obtainable through the ERPNext UI or
+  the API.
+- Confirmed by direct testing: setting one of these fields on a Sales
+  Invoice create call fails the *entire* create with a 500
+  (`MySQLdb.OperationalError: Unknown column ...`) — not a graceful
+  ignore.
 
-A new script, run manually once (by whoever runs this project's other
-one-time scripts, e.g. `npm run init-db` — same category of action),
-before the recurring sync script's first real run. Idempotent — checks for
-each thing's existence before creating it, so it's safe to re-run (e.g.
-after adding a 6th package in the future). Creates, only if missing:
+**Decision: drop all 3 fields from this integration entirely, for now.**
+Idempotency relies solely on the local `transactions.erpnext_invoice_name`
+column (already reliable for the normal case: the sync script never
+re-attempts a row once that column is set). The one edge case this gives
+up is a crash between "ERPNext created the invoice" and "we recorded that
+locally" — in that narrow window a retry could create a second invoice for
+the same transaction. Given the cron interval and the low volume of this
+business, this is an accepted, documented risk, not a silent gap — re-
+adding the custom fields (and the ERPNext-side lookup) is a small,
+self-contained follow-up once someone with server access runs the schema
+migration.
 
-- The 5 Items from the mapping table above (non-stock, `is_sales_item: 1`,
-  `is_stock_item: 0`, Item Group `Airtime`, `standard_rate` = the package
-  price)
-- The 3 Custom Fields on Sales Invoice (`website_transaction_id`,
-  `website_package_id`, `payment_gateway` — all simple Data fields)
-- The 2 Modes of Payment (`Paynow EcoCash`, `Paynow OneMoney`)
+## One-time ERPNext setup
 
-This script requires the integration user to actually have *write*
-permission on Item, Custom Field, and Mode of Payment doctypes — which,
-like Sales Invoice/Payment Entry write access, was not confirmed during
-design (only read access was checked, per the brief's explicit
-no-destructive-testing rule) and is confirmed by this script actually
-running successfully as the first real write-permission test.
+Nothing in this integration's *code* creates ERPNext records as setup —
+the integration user cannot create Item, Custom Field, or Mode of Payment
+records, and the corrected design deliberately does not ask it to. All
+one-time setup is done by a human with ERPNext UI access, before the
+recurring sync script's first real run:
+
+- **Items:** none created — all 5 already exist (see the mapping table
+  above). Nothing to do.
+- **Custom Fields:** dropped from this integration entirely (see "Custom
+  fields dropped" above). Nothing to do until the schema-sync follow-up.
+- **Modes of Payment:** `Paynow EcoCash` and `Paynow OneMoney` (Type:
+  `General`) must exist before the sync script's first real Payment Entry
+  create — created directly via the ERPNext UI (List view → New), a plain
+  record insert with no schema-sync complication, unlike Custom Field.
+
+There is no `scripts/setup-erpnext.js` in this design — there is nothing
+left for a script to set up that the integration user is permitted to
+create.
 
 ## ERPNext API client — `src/services/erpnext.js`
 
@@ -237,10 +311,16 @@ each exported function so `MOCK_MODE=true` needs no real ERPNext reachable):
 
 ```javascript
 export async function getLatestExchangeRate(from, to) { ... }
-export async function findInvoiceByTransactionRef(reference) { ... }
-export async function createAndSubmitInvoice({ reference, packageId, amount, method }) { ... }
+export async function createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB }) { ... }
 export async function createAndSubmitPaymentEntry({ invoiceName, amount, method, reference }) { ... }
 ```
+
+`findInvoiceByTransactionRef` — present in an earlier draft of this
+module, built for the ERPNext-side idempotency check described above — is
+dropped along with the 3 custom fields it depended on (it queried
+`website_transaction_id`, a field that no longer exists in this design).
+It is removed from the module rather than left dead: reintroducing it is
+part of the same follow-up that re-adds the custom fields.
 
 Auth: `Authorization: token <ERPNEXT_API_KEY>:<ERPNEXT_API_SECRET>` header,
 built once from `config.erpnext`, matching how `config.omada` already
@@ -293,10 +373,17 @@ adding one is a bigger UI/route change than this spec's scope).
 - Per-buyer ERPNext Customer records.
 - Any change to voucher redemption (`login.js`) — sync is purchase-time
   only.
-- Creating the 5 ERPNext Items and 3 Custom Fields programmatically as part
-  of the sync script — these are one-time setup, done once (by this
-  project's implementation, or manually) before the sync script's first
-  real run, not on every cron tick.
+- Creating ERPNext Items, Custom Fields, or Modes of Payment
+  programmatically, at any time — the integration user has no Create
+  permission on any of these doctypes (confirmed 403 on all three, real
+  requests), and this is intentional least-privilege scoping to preserve,
+  not a gap to work around. All 5 Items already exist and are reused
+  as-is; Modes of Payment are created once, manually, via the ERPNext UI;
+  the 3 originally-planned Custom Fields are dropped from this integration
+  entirely pending a server-side schema migration (see "Custom fields
+  dropped" above).
+- Requesting broader ERPNext permissions for the integration user, or
+  using Administrator credentials, to work around any of the above.
 
 ## Testing
 
@@ -306,21 +393,29 @@ established throughout its history):
 1. Mock mode (`MOCK_MODE=true`): confirm `erpnext.js`'s functions
    short-circuit with a `[MOCK]` log line and no real HTTP call, same
    pattern as `omada.js`/`paynow.js`.
-2. Run `scripts/setup-erpnext.js` against the real instance — confirm the 5
-   Items, 3 Custom Fields, and 2 Modes of Payment are created, and that
-   this is the first real confirmation of write access (not just read).
-   Run it a second time immediately after — confirm it's a no-op (nothing
-   duplicated, no error).
+2. Confirm the one-time manual setup is complete before the first real
+   sync run: the 2 Modes of Payment (`Paynow EcoCash`, `Paynow OneMoney`)
+   exist in ERPNext (created via the UI, per "One-time ERPNext setup"
+   above) — there is no setup script to run, since Items already exist
+   and Custom Fields are dropped from this integration.
 3. Real credentials, a single controlled test purchase (small amount, e.g.
    the `1gb` $0.50 package): run the sync script once, confirm a real
    `SINV-RET-*` invoice appears in ERPNext with the right customer,
-   company, item, amount, tax, and fiscal fields, and a matching submitted
-   Payment Entry — this is also the first real confirmation that the
-   integration user actually has *write* access (only read was confirmed
-   during design), per the brief's own Test 1.
+   company, mapped item (`electroair0.5`), amount, tax, and fiscal fields,
+   and a matching submitted Payment Entry — this is also the first real
+   confirmation that the integration user actually has *write* access on
+   Sales Invoice and Payment Entry (only read was confirmed during
+   design), per the brief's own Test 1. Watch specifically for a "Debit
+   and Credit not equal" validation error on submit — seen once during
+   ad-hoc testing with a minimal payload missing `is_pos`/`pos_profile`/
+   tax fields; the real `createAndSubmitInvoice()` payload includes all of
+   these, but this needs to be watched, not assumed fixed.
 4. Duplicate-webhook simulation: mark the same transaction pending twice
    in a row (simulating Paynow's callback firing twice) and run the sync
-   script twice — confirm exactly one invoice, no duplicate.
+   script twice — confirm exactly one invoice, no duplicate. (This
+   exercises only the local `erpnext_invoice_name` idempotency check, per
+   the "Custom fields dropped" note above — there is no ERPNext-side
+   cross-check in this design.)
 5. A transaction with a legacy `package_id` — confirm it's marked
    `not_required`, not retried, no invoice.
 6. Simulate ERPNext unreachable (wrong `ERPNEXT_BASE_URL` temporarily) —
