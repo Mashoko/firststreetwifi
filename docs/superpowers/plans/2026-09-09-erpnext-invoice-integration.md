@@ -634,19 +634,35 @@ function isEligibleForRetry(tx) {
 
 /**
  * Atomically claims a transaction for this run by flipping its status to
- * 'processing' — an UPDATE ... WHERE guarded on the status it expects to
- * find, so two overlapping sync script runs (e.g. cron firing again while a
- * prior run is still active because ERPNext was slow) can't both claim the
- * same row and create two invoices for one payment. Returns true if this
- * call actually claimed it, false if something else already did.
+ * 'processing' — an UPDATE ... WHERE guarded on the row's real-time state
+ * (not the caller's possibly-stale in-memory copy of it), so two overlapping
+ * sync script runs (e.g. cron firing again while a prior run is still active
+ * because ERPNext was slow) can't both claim the same row and create two
+ * invoices for one payment. Returns true if this call actually claimed it,
+ * false if something else already did.
+ *
+ * The WHERE clause re-checks staleness itself rather than guarding on
+ * `erpnext_sync_status=?` bound to the value read at SELECT time — that
+ * simpler guard is a no-op for the stale-'processing'-reclaim case: the SET
+ * clause writes the SAME status value ('processing') the WHERE clause would
+ * be checking for, so the comparison never actually excludes a second
+ * claimant (confirmed by real double-claim testing during Task 7's review:
+ * two sequential claim() calls against the same stale row both succeeded).
+ * Because SQLite serializes writes, re-checking staleness in the WHERE
+ * clause fixes it: whichever UPDATE commits first advances
+ * erpnext_last_sync_attempt to "now", so a second concurrent UPDATE's WHERE
+ * re-evaluation sees the row as no-longer-stale and gets changes=0.
  */
 function claim(tx) {
   const result = db
     .prepare(
       `UPDATE transactions SET erpnext_sync_status='processing', erpnext_last_sync_attempt=datetime('now'), updated_at=datetime('now')
-       WHERE id=? AND erpnext_sync_status=?`
+       WHERE id=? AND (
+         erpnext_sync_status IN ('pending','failed')
+         OR (erpnext_sync_status='processing' AND erpnext_last_sync_attempt < datetime('now', ?))
+       )`
     )
-    .run(tx.id, tx.erpnext_sync_status);
+    .run(tx.id, `-${STALE_PROCESSING_MINUTES} minutes`);
   return result.changes === 1;
 }
 
