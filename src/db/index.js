@@ -55,4 +55,22 @@ export function initSchema() {
   if (!voucherCols.includes('data_bytes')) {
     db.exec(`ALTER TABLE vouchers ADD COLUMN data_bytes INTEGER`);
   }
+
+  // Add ERP sync tracking columns to transactions table
+  const txCols = db.prepare(`PRAGMA table_info(transactions)`).all().map((c) => c.name);
+  const newTxCols = {
+    erpnext_customer: 'TEXT',
+    erpnext_invoice_name: 'TEXT',
+    erpnext_payment_entry_name: 'TEXT',
+    erpnext_sync_status: 'TEXT',
+    erpnext_sync_attempts: 'INTEGER DEFAULT 0',
+    erpnext_last_sync_attempt: 'TEXT',
+    erpnext_synced_at: 'TEXT',
+    erpnext_sync_error: 'TEXT',
+  };
+  for (const [col, type] of Object.entries(newTxCols)) {
+    if (!txCols.includes(col)) {
+      db.exec(`ALTER TABLE transactions ADD COLUMN ${col} ${type}`);
+    }
+  }
 }
