@@ -108,3 +108,57 @@ export async function getItemByCode(itemCode) {
   });
   return !!data?.data;
 }
+
+const COMPANY = 'Africom Private Ltd ZiG';
+const CUSTOMER = 'CASH USD';
+const TAX_TEMPLATE = 'Zimbabwe Tax - APLG';
+const POS_PROFILE = 'Contact Centre';
+
+/**
+ * Creates a Sales Invoice for one hotspot package purchase and submits it.
+ * Frappe's REST API creates a document as a draft (docstatus 0); submission
+ * is a separate PUT setting docstatus to 1, which is what actually triggers
+ * ERPNext's submit-time validation/side-effects (including, per the real
+ * invoices inspected during design, ZIMRA fiscalisation).
+ */
+export async function createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB }) {
+  if (config.mockMode) {
+    console.log(`[MOCK] ERPNext create+submit invoice: ref=${reference} item=${itemCode} amount=${amount}`);
+    return `MOCK-SINV-${reference}`;
+  }
+
+  const { rate } = await getLatestExchangeRate('USD', 'ZWG');
+
+  const draft = await erpRequest('POST', '/api/resource/Sales Invoice', {
+    naming_series: 'SINV-RET-.YYYY.-',
+    customer: CUSTOMER,
+    company: COMPANY,
+    currency: 'USD',
+    conversion_rate: rate,
+    is_pos: 1,
+    pos_profile: POS_PROFILE,
+    custom_fiscalise: 1,
+    taxes_and_charges: TAX_TEMPLATE,
+    website_transaction_id: reference,
+    website_package_id: packageId,
+    payment_gateway: 'Paynow',
+    items: [
+      {
+        item_code: itemCode,
+        qty: 1,
+        rate: amount,
+      },
+    ],
+  });
+
+  const invoiceName = draft?.data?.name;
+  if (!invoiceName) {
+    throw new Error(`ERPNext invoice creation returned no name for reference ${reference}`);
+  }
+
+  await erpRequest('PUT', `/api/resource/Sales Invoice/${encodeURIComponent(invoiceName)}`, {
+    docstatus: 1,
+  });
+
+  return invoiceName;
+}
