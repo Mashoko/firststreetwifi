@@ -51,7 +51,7 @@ export function getTransactionOutcomes({ from, to }) {
 export function getRecentPayments({ from, to, limit = 25 }) {
   return db
     .prepare(
-      `SELECT reference, package_id, amount, phone, status, voucher_code, created_at
+      `SELECT reference, package_id, amount, phone, status, voucher_code, erpnext_sync_status, created_at
        FROM transactions WHERE status='paid' AND date(created_at) BETWEEN date(?) AND date(?)
        ORDER BY created_at DESC LIMIT ?`
     )

@@ -34,12 +34,12 @@
       <a href="/admin/revenue/export.csv?range=<%= range.preset %><%= packageId ? '&package=' + encodeURIComponent(packageId) : '' %>" style="font-size:11px;color:var(--ink-secondary)">Export CSV</a>
     </div>
     <table class="dash-table">
-      <thead><tr><th>Ref</th><th>Package</th><th>Amount</th><th>Phone</th><th>Voucher</th></tr></thead>
+      <thead><tr><th>Ref</th><th>Package</th><th>Amount</th><th>Phone</th><th>Voucher</th><th>ERP Sync</th></tr></thead>
       <tbody>
         <% recent.forEach(function(t) { %>
-          <tr><td style="font-size:11px"><%= t.reference %></td><td><%= t.package_id %></td><td>$<%= Number(t.amount).toFixed(2) %></td><td><%= t.phone || '—' %></td><td style="font-family:monospace"><%= t.voucher_code || '—' %></td></tr>
+          <tr><td style="font-size:11px"><%= t.reference %></td><td><%= t.package_id %></td><td>$<%= Number(t.amount).toFixed(2) %></td><td><%= t.phone || '—' %></td><td style="font-family:monospace"><%= t.voucher_code || '—' %></td><td><%= t.erpnext_sync_status === 'success' ? 'Synced' : t.erpnext_sync_status === 'failed' ? 'Failed' : t.erpnext_sync_status === 'pending' ? 'Pending' : '—' %></td></tr>
         <% }); %>
-        <% if (recent.length === 0) { %><tr><td colspan="5" style="color:var(--ink-muted)">No payments in this range.</td></tr><% } %>
+        <% if (recent.length === 0) { %><tr><td colspan="6" style="color:var(--ink-muted)">No payments in this range.</td></tr><% } %>
       </tbody>
     </table>
   </div>
