@@ -17,7 +17,7 @@
     <div class="card center">
       <div class="big-icon">✅</div>
       <h2>Connected!</h2>
-      <p class="lead"><%= pkg ? pkg.name : 'Access' %> active for
+      <p class="lead"><%= pkg ? pkg.name : 'Access' %><% if (pkg && pkg.dataGB) { %> — <strong><%= pkg.dataGB %>GB</strong><% } %> active for
         <% var h = Math.floor(minutes/60); var d = Math.floor(h/24); %>
         <strong><%= d >= 1 ? d + ' day' + (d>1?'s':'') : h + ' hour' + (h>1?'s':'') %></strong>.
       </p>
