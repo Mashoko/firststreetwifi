@@ -11,7 +11,7 @@ function randomCode(len = 8) {
   return `${out.slice(0, 4)}-${out.slice(4)}`;
 }
 
-export function createVoucher({ packageId, minutes, transactionId }) {
+export function createVoucher({ packageId, minutes, dataBytes, transactionId }) {
   let code;
   // Ensure uniqueness
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -21,11 +21,11 @@ export function createVoucher({ packageId, minutes, transactionId }) {
   }
   const info = db
     .prepare(
-      `INSERT INTO vouchers (code, package_id, minutes, transaction_id, status)
-       VALUES (?, ?, ?, ?, 'unused')`
+      `INSERT INTO vouchers (code, package_id, minutes, data_bytes, transaction_id, status)
+       VALUES (?, ?, ?, ?, ?, 'unused')`
     )
-    .run(code, packageId, minutes, transactionId);
-  return { id: info.lastInsertRowid, code, minutes, packageId };
+    .run(code, packageId, minutes, dataBytes ?? null, transactionId);
+  return { id: info.lastInsertRowid, code, minutes, dataBytes, packageId };
 }
 
 export function findVoucher(code) {
