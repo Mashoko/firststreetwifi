@@ -46,4 +46,13 @@ export function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_tx_ref ON transactions(reference);
     CREATE INDEX IF NOT EXISTS idx_voucher_code ON vouchers(code);
   `);
+
+  // SQLite's CREATE TABLE IF NOT EXISTS doesn't retroactively add columns
+  // to an already-existing table, so new columns need their own guarded
+  // ALTER TABLE. This one only fires once per (existing) DB file — silently
+  // fine to re-run since we check for the column first.
+  const voucherCols = db.prepare(`PRAGMA table_info(vouchers)`).all().map((c) => c.name);
+  if (!voucherCols.includes('data_bytes')) {
+    db.exec(`ALTER TABLE vouchers ADD COLUMN data_bytes INTEGER`);
+  }
 }
