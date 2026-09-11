@@ -104,6 +104,7 @@ async function syncOne(tx) {
       itemCode,
       amount: tx.amount,
       dataGB: pkg.dataGB,
+      method: tx.method,
     });
 
     const paymentEntryName = await createAndSubmitPaymentEntry({

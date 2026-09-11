@@ -115,14 +115,25 @@ const MODE_OF_PAYMENT = {
  * `transactions.erpnext_invoice_name` column. `packageId`/`dataGB` stay in
  * the signature so callers don't need to change again once that follow-up
  * lands.
+ *
+ * `method` (`'ecocash'`/`'onemoney'`) is required because `is_pos: 1`
+ * invoices need their own `payments` child-table row declaring which mode
+ * of payment was used at point of sale — this is separate from, and in
+ * addition to, the Payment Entry created afterward by
+ * `createAndSubmitPaymentEntry()`. Found via a real submit failure:
+ * "At least one mode of payment is required for POS invoice." Uses the
+ * same `MODE_OF_PAYMENT` mapping as the Payment Entry step, so the mode
+ * named on the invoice always matches the mode used for the actual
+ * payment.
  */
-export async function createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB }) {
+export async function createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB, method }) {
   if (config.mockMode) {
-    console.log(`[MOCK] ERPNext create+submit invoice: ref=${reference} item=${itemCode} amount=${amount}`);
+    console.log(`[MOCK] ERPNext create+submit invoice: ref=${reference} item=${itemCode} amount=${amount} method=${method}`);
     return `MOCK-SINV-${reference}`;
   }
 
   const { rate } = await getLatestExchangeRate('USD', 'ZWG');
+  const modeOfPayment = MODE_OF_PAYMENT[method] || MODE_OF_PAYMENT.ecocash;
 
   const draft = await erpRequest('POST', '/api/resource/Sales Invoice', {
     naming_series: 'SINV-RET-.YYYY.-',
@@ -139,6 +150,12 @@ export async function createAndSubmitInvoice({ reference, packageId, itemCode, a
         item_code: itemCode,
         qty: 1,
         rate: amount,
+      },
+    ],
+    payments: [
+      {
+        mode_of_payment: modeOfPayment,
+        amount,
       },
     ],
   });
