@@ -311,7 +311,7 @@ each exported function so `MOCK_MODE=true` needs no real ERPNext reachable):
 
 ```javascript
 export async function getLatestExchangeRate(from, to) { ... }
-export async function createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB }) { ... }
+export async function createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB, method }) { ... }
 export async function createAndSubmitPaymentEntry({ invoiceName, amount, method, reference }) { ... }
 ```
 
@@ -405,11 +405,30 @@ established throughout its history):
    and a matching submitted Payment Entry — this is also the first real
    confirmation that the integration user actually has *write* access on
    Sales Invoice and Payment Entry (only read was confirmed during
-   design), per the brief's own Test 1. Watch specifically for a "Debit
-   and Credit not equal" validation error on submit — seen once during
-   ad-hoc testing with a minimal payload missing `is_pos`/`pos_profile`/
-   tax fields; the real `createAndSubmitInvoice()` payload includes all of
-   these, but this needs to be watched, not assumed fixed.
+   design), per the brief's own Test 1.
+
+   **Done — real end-to-end test completed 2026-09-11, via a genuine
+   Paynow test-mode purchase (test EcoCash number `0771111111`, Paynow's
+   real result-callback webhook, real sync run — no fabricated DB rows).**
+   Along the way this surfaced (and fixed) a real submit failure the
+   ad-hoc pre-test probing hadn't shown: `is_pos: 1` invoices need their
+   own `payments` child-table row naming the mode of payment, or ERPNext
+   rejects the submit with "At least one mode of payment is required for
+   POS invoice." (The earlier-flagged "Debit and Credit not equal" risk,
+   from a minimal ad-hoc payload missing `is_pos`/`pos_profile`/tax
+   fields, never reproduced against the real `createAndSubmitInvoice()`
+   payload — a different, real issue did.) `createAndSubmitInvoice()` now
+   takes a `method` parameter and sends `payments: [{mode_of_payment,
+   amount}]` using the same `MODE_OF_PAYMENT` mapping the Payment Entry
+   step already used. Confirmed against the real result: `SINV-RET-2026-
+   03752` submitted (status "Paid", real ZIMRA fiscal fields populated —
+   QR code, verification code, fiscal day, device ID), `REC-2026-00175`
+   submitted and fully allocated against it, `outstanding_amount: 0`.
+   Because this ran through Paynow's test mode, no real money moved — the
+   resulting $0.50 invoice/payment pair is a real ERPNext entry not backed
+   by a genuine sale, left for the business to void/journal out once
+   Paynow approves live mode and a real-money test can replace it as the
+   permanent record, if they choose to.
 4. Duplicate-webhook simulation: mark the same transaction pending twice
    in a row (simulating Paynow's callback firing twice) and run the sync
    script twice — confirm exactly one invoice, no duplicate. (This

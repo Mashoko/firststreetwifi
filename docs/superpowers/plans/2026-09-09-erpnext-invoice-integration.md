@@ -321,23 +321,36 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 > `Unknown column` on write), and the integration user can't create
 > Custom Fields itself (403) to try again a different way. **Corrective
 > edit required on the already-committed code:** remove those 3 fields
-> from the request body below — this is the one code change this
-> correction requires; nothing else in this task changes.
+> from the request body below.
+>
+> **Second correction (post-Task-10, real end-to-end test):** a real
+> purchase run through the full pipeline (real Paynow test-mode webhook →
+> real sync) found ERPNext rejects the invoice submit with "At least one
+> mode of payment is required for POS invoice." — `is_pos: 1` invoices
+> need their own `payments` child-table row naming the mode of payment
+> used at point of sale, separate from the Payment Entry created
+> afterward by Task 5's function. Fixed by adding a `method` parameter and
+> a `payments` row using the same `MODE_OF_PAYMENT` map Task 5 already
+> defines — shown in corrected form below.
 
 **Files:**
 - Modify: `src/services/erpnext.js`
 
 **Interfaces:**
 - Consumes: `erpRequest`, `getLatestExchangeRate` (Task 1)
-- Produces: `createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB })` → the invoice `name` string.
+- Produces: `createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB, method })` → the invoice `name` string.
 
-- [ ] **Step 1: Add this function to `src/services/erpnext.js`** (shown here in corrected form — no `website_transaction_id`/`website_package_id`/`payment_gateway` fields)
+- [ ] **Step 1: Add this function to `src/services/erpnext.js`** (shown here in corrected form — no `website_transaction_id`/`website_package_id`/`payment_gateway` fields, `payments` row added)
 
 ```javascript
 const COMPANY = 'Africom Private Ltd ZiG';
 const CUSTOMER = 'CASH USD';
 const TAX_TEMPLATE = 'Zimbabwe Tax - APLG';
 const POS_PROFILE = 'Contact Centre';
+const MODE_OF_PAYMENT = {
+  ecocash: 'Paynow Ecocash',
+  onemoney: 'Paynow OneMoney',
+};
 
 /**
  * Creates a Sales Invoice for one hotspot package purchase and submits it.
@@ -351,14 +364,19 @@ const POS_PROFILE = 'Contact Centre';
  * note on the custom fields dropped from this integration (see Global
  * Constraints). Kept in the signature/call site so Task 7 doesn't need to
  * change again when the custom-field follow-up lands.
+ *
+ * `method` is required — an `is_pos: 1` invoice needs its own `payments`
+ * row declaring the mode of payment, confirmed by a real submit failure
+ * ("At least one mode of payment is required for POS invoice.").
  */
-export async function createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB }) {
+export async function createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB, method }) {
   if (config.mockMode) {
-    console.log(`[MOCK] ERPNext create+submit invoice: ref=${reference} item=${itemCode} amount=${amount}`);
+    console.log(`[MOCK] ERPNext create+submit invoice: ref=${reference} item=${itemCode} amount=${amount} method=${method}`);
     return `MOCK-SINV-${reference}`;
   }
 
   const { rate } = await getLatestExchangeRate('USD', 'ZWG');
+  const modeOfPayment = MODE_OF_PAYMENT[method] || MODE_OF_PAYMENT.ecocash;
 
   const draft = await erpRequest('POST', '/api/resource/Sales Invoice', {
     naming_series: 'SINV-RET-.YYYY.-',
@@ -375,6 +393,12 @@ export async function createAndSubmitInvoice({ reference, packageId, itemCode, a
         item_code: itemCode,
         qty: 1,
         rate: amount,
+      },
+    ],
+    payments: [
+      {
+        mode_of_payment: modeOfPayment,
+        amount,
       },
     ],
   });
@@ -415,6 +439,10 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ### Task 5: ERPNext client — create and submit a Payment Entry
 
+> **Note (post-Task-10 correction):** `MODE_OF_PAYMENT` is now defined in
+> Task 4 (moved there so `createAndSubmitInvoice`'s `payments` row can use
+> it too) — do not redeclare it here, same as `COMPANY`/`CUSTOMER` below.
+
 **Files:**
 - Modify: `src/services/erpnext.js`
 
@@ -425,11 +453,6 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - [ ] **Step 1: Add this function to `src/services/erpnext.js`**
 
 ```javascript
-const MODE_OF_PAYMENT = {
-  ecocash: 'Paynow Ecocash',
-  onemoney: 'Paynow OneMoney',
-};
-
 /**
  * Creates and submits a Payment Entry against an already-submitted Sales
  * Invoice, marking it paid. `paid_to` (which GL account the money lands in)
@@ -497,7 +520,7 @@ export async function createAndSubmitPaymentEntry({ invoiceName, amount, method,
 }
 ```
 
-Note: `COMPANY` and `CUSTOMER` are already defined as module-level constants in Task 4 — do not redeclare them.
+Note: `COMPANY`, `CUSTOMER`, and `MODE_OF_PAYMENT` are already defined as module-level constants in Task 4 — do not redeclare them.
 
 - [ ] **Step 2: Verify manually — mock mode only**
 
@@ -712,6 +735,7 @@ async function syncOne(tx) {
       itemCode,
       amount: tx.amount,
       dataGB: pkg.dataGB,
+      method: tx.method,
     });
 
     const paymentEntryName = await createAndSubmitPaymentEntry({
