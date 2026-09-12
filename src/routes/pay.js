@@ -39,20 +39,27 @@ async function finalizePaidTransaction(tx) {
     }
   }
 
-  // Guarded on erpnext_invoice_name IS NULL: Paynow can and does resend its
-  // result callback for the same transaction, and this function has no
-  // other guard against re-running for an already-paid tx (voucher/Omada
-  // steps above are already idempotent via voucherCode/clientMac checks).
-  // Without this guard, a repeat callback arriving after a successful
-  // ERPNext sync would reset erpnext_sync_status back to 'pending' forever
-  // — the sync script's own idempotency check (erpnext_invoice_name set)
-  // would then skip it every run without ever correcting the status, so it
-  // would show as permanently "Pending" on the admin dashboard despite
-  // having a real invoice. Found via whole-branch review, not observed in
-  // production.
+  // Paynow can and does resend its result callback for the same
+  // transaction, and this function has no other guard against re-running
+  // for an already-paid tx (voucher/Omada steps above are already
+  // idempotent via voucherCode/clientMac checks). Two things this guard
+  // protects against, both found via whole-branch review, neither observed
+  // in production:
+  // - erpnext_invoice_name IS NULL: without this, a repeat callback
+  //   arriving after a successful sync would reset erpnext_sync_status
+  //   back to 'pending' forever — the sync script's own idempotency check
+  //   (invoice name already set) would then skip it every run without ever
+  //   correcting the status, showing as permanently "Pending" on the admin
+  //   dashboard despite having a real invoice.
+  // - erpnext_sync_status != 'processing': without this, a repeat callback
+  //   landing WHILE a sync run currently holds this row (invoice_name still
+  //   NULL at that point) would flip it back to 'pending', making it
+  //   claimable again by the sync script's own atomic claim() — two
+  //   overlapping "runs" (one real cron tick, one this repeat callback
+  //   racing it) could then both create an invoice for the same payment.
   db.prepare(
     `UPDATE transactions SET erpnext_sync_status='pending', updated_at=datetime('now')
-     WHERE id=? AND erpnext_invoice_name IS NULL`
+     WHERE id=? AND erpnext_invoice_name IS NULL AND erpnext_sync_status IS NOT 'processing'`
   ).run(tx.id);
 
   return voucherCode;

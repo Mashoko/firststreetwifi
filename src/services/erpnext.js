@@ -104,6 +104,36 @@ const MODE_OF_PAYMENT = {
 };
 
 /**
+ * Computes the item `rate` (net, pre-tax) that makes an invoice's
+ * `grand_total` land back on the amount the customer actually paid, given
+ * `TAX_RATE_PERCENT` is additive ("On Net Total", not included in print
+ * rate) — confirmed via a real GET against the live tax template. Without
+ * this, invoicing the collected amount directly overstates the sale (a
+ * real, confirmed bug: a $0.50 sale was invoiced at $0.58) and the
+ * resulting non-whole-dollar total triggers this instance's default
+ * rounding, distorting it further with a Round Off GL entry.
+ *
+ * Exact for the 5 current package prices ($0.50/$1.00/$2.00/$3.00/$5.00,
+ * verified both by computation and against two live post-fix invoices),
+ * but rounding to 2dp is not a general identity for every possible
+ * amount — throws instead of silently landing a cent off (which would
+ * otherwise misbook or leave `outstanding_amount` non-zero) if a future
+ * price or tax-rate change breaks the assumption.
+ */
+function netRateForGrandTotal(amount) {
+  const net = Math.round((amount / (1 + TAX_RATE_PERCENT / 100)) * 100) / 100;
+  const tax = Math.round(net * TAX_RATE_PERCENT) / 100;
+  const grand = Math.round((net + tax) * 100) / 100;
+  if (grand !== amount) {
+    throw new Error(
+      `netRateForGrandTotal(${amount}) would produce grand_total ${grand}, not ${amount} — ` +
+      `this price doesn't divide cleanly under ${TAX_RATE_PERCENT}% tax; do not sync it until this is resolved.`
+    );
+  }
+  return net;
+}
+
+/**
  * Creates a Sales Invoice for one hotspot package purchase and submits it.
  * Frappe's REST API creates a document as a draft (docstatus 0); submission
  * is a separate PUT setting docstatus to 1, which is what actually triggers
@@ -129,21 +159,13 @@ const MODE_OF_PAYMENT = {
  * "At least one mode of payment is required for POS invoice." This
  * `payments` row is now the ONLY settlement mechanism for these invoices
  * (an earlier version also created a separate Payment Entry — dropped,
- * see `createAndSubmitPaymentEntry`'s doc comment for why).
+ * see the plain comment where `createAndSubmitPaymentEntry` used to be,
+ * below, for why).
  *
  * The invoice is created with `disable_rounded_total: 1` and an item
- * `rate` computed so `grand_total` lands on the amount the customer
- * actually paid (`amount`), not on `amount` itself — see
- * `netRateForGrandTotal()`. Without this, the additive tax template
- * invoices MORE than was collected, and ERPNext's default whole-currency
- * rounding then distorts it further with a Round Off GL entry — both
- * confirmed as real bugs via a live GL inspection of the first real test
- * invoice (grand_total $0.58 and a $0.42 Round Off entry on a $0.50 sale).
+ * `rate` computed by `netRateForGrandTotal()` (see above) so `grand_total`
+ * lands on the amount the customer actually paid, not on `amount` itself.
  */
-function netRateForGrandTotal(amount) {
-  return Math.round((amount / (1 + TAX_RATE_PERCENT / 100)) * 100) / 100;
-}
-
 export async function createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB, method }) {
   if (config.mockMode) {
     console.log(`[MOCK] ERPNext create+submit invoice: ref=${reference} item=${itemCode} amount=${amount} method=${method}`);
