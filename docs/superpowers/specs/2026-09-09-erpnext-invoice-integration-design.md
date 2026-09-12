@@ -112,12 +112,18 @@ see the corrected Package → Item mapping below.
 
 - **No customer accounts, no per-buyer ERPNext Customer.** Every hotspot
   sale posts against the single `CASH USD` customer.
-- **Invoice + Payment Entry created together, always.** By the time this
-  integration ever sees a transaction, Paynow has already confirmed real
-  payment — there is no "unpaid ERPNext invoice" state to represent. Every
-  synced transaction gets a submitted Sales Invoice *and* a matching
-  Payment Entry in the same sync pass, mirroring the real `SINV-RET-*`
-  invoices (all `status: "Paid"`).
+- **Invoice settles itself via its own `payments` row — no separate
+  Payment Entry.** (Superseded from the original "Invoice + Payment Entry
+  created together, always" decision — see "Sync flow" below.) By the
+  time this integration ever sees a transaction, Paynow has already
+  confirmed real payment, so the `is_pos: 1` invoice's own `payments`
+  child-table row (required anyway — ERPNext rejects a POS invoice submit
+  with no payment method declared) fully settles it in the same call that
+  creates and submits it, exactly matching how the business's own real
+  `SINV-RET-*` retail invoices work (checked directly: none of them have
+  a Payment Entry either). A real end-to-end test with a separate Payment
+  Entry on top of this row found it fighting the `payments` row for
+  settlement — see "Sync flow" for the full story.
 - **ERP sync is fully decoupled from package activation.** The existing
   `finalizePaidTransaction()` in `src/routes/pay.js` — the one authoritative
   place a payment becomes genuinely successful — only marks
@@ -199,12 +205,19 @@ their laptop before the Omada authorize call completed):
 
 ```javascript
 db.prepare(
-  `UPDATE transactions SET erpnext_sync_status='pending', updated_at=datetime('now') WHERE id=?`
+  `UPDATE transactions SET erpnext_sync_status='pending', updated_at=datetime('now')
+   WHERE id=? AND erpnext_invoice_name IS NULL`
 ).run(tx.id);
 ```
 
 That's the entire change to the existing request path. Everything else
-lives in the new sync script.
+lives in the new sync script. The `erpnext_invoice_name IS NULL` guard
+(added after the whole-branch review, not in the original design) matters
+because Paynow can and does resend its result callback for the same
+transaction — without it, a repeat callback arriving after a successful
+sync would reset an already-synced row back to `pending` forever (the
+sync script's own idempotency check would then skip it every run without
+ever correcting the status).
 
 **`scripts/sync-erpnext-invoices.js`** (new file, run via cron, e.g. every 3
 minutes):
@@ -225,16 +238,20 @@ minutes):
      and move on — never attempted, never retried.
    - Fetch the latest USD→ZWG rate from `Currency Exchange`.
    - Create the Sales Invoice: customer `CASH USD`, company `Africom
-     Private Ltd ZiG`, currency `USD`, the fetched `conversion_rate`, one
-     line item (the mapped Item Code, qty 1, rate = `pkg.price`), tax
+     Private Ltd ZiG`, currency `USD`, the fetched `conversion_rate`,
+     `disable_rounded_total: 1`, one line item (the mapped Item Code, qty
+     1, **rate = the net (pre-tax) amount** — see "Tax and settlement
+     correction" below, not `pkg.price`/`tx.amount` directly), tax
      template `Zimbabwe Tax - APLG`, `is_pos: 1`, `pos_profile: "Contact
-     Centre"`, `custom_fiscalise: 1`. No `website_transaction_id`/
-     `website_package_id`/`payment_gateway` fields are set — see below.
-   - Submit it (`docstatus: 1`).
-   - Create a Payment Entry against it: amount = `tx.amount`, mode of
+     Centre"`, `custom_fiscalise: 1`, and a `payments` row (mode of
      payment = `"Paynow Ecocash"` or `"Paynow OneMoney"` depending on
-     `tx.method`, reference = `tx.reference`. Submit it too.
-   - On success: store `erpnext_invoice_name`, `erpnext_payment_entry_name`,
+     `tx.method`, amount = `tx.amount`, the money actually collected). No
+     `website_transaction_id`/`website_package_id`/`payment_gateway`
+     fields are set — see below.
+   - Submit it (`docstatus: 1`). The `payments` row above fully settles
+     the invoice at submit time — there is no separate Payment Entry
+     step (see "Tax and settlement correction" below for why).
+   - On success: store `erpnext_invoice_name`,
      `erpnext_customer='CASH USD'`, `erpnext_sync_status='success'`,
      `erpnext_synced_at=now`.
    - On any failure at any step: store `erpnext_sync_status='failed'`,
@@ -281,6 +298,62 @@ adding the custom fields (and the ERPNext-side lookup) is a small,
 self-contained follow-up once someone with server access runs the schema
 migration.
 
+**Tax and settlement correction (found by the final whole-branch review,
+after all 10 plan tasks were otherwise complete).** The first real
+end-to-end test used the `1gb` $0.50 package and passed — but a follow-up
+review that read the actual GL entries on the live invoice found this had
+passed by coincidence, not correctness, and the same design would have
+failed or misbooked every other package:
+
+- **Additive tax, not extracted.** `Zimbabwe Tax - APLG` is 15.5% "On Net
+  Total" with `included_in_print_rate: 0` — i.e. tax is added on top of
+  the item rate. The original design set the item `rate` to the money
+  actually collected (`tx.amount`), so a $0.50 sale was invoiced at
+  **$0.58** — $0.08 of VAT liability recognised on money never received.
+  The business's own real retail invoices do the opposite (net + tax =
+  the round amount actually charged). **Fix:** the item `rate` is now the
+  *net* amount that makes `grand_total` land on `tx.amount`:
+  `netRate = round(amount / 1.155, 2)`. Verified this lands exactly on
+  the money collected, after ERPNext's own rounding, for all 5 current
+  package prices ($0.50/$1.00/$2.00/$3.00/$5.00 → net $0.43/$0.87/$1.73/
+  $2.60/$4.33, tax $0.07/$0.13/$0.27/$0.40/$0.67, grand exactly $0.50/
+  $1.00/$2.00/$3.00/$5.00) — both computed and, for two of the five,
+  confirmed against real live invoices.
+- **Whole-currency rounding distortion.** With the additive-tax bug,
+  `grand_total` ($0.58) wasn't a whole dollar, and this ERPNext instance
+  rounds `rounded_total` to the nearest whole dollar by default — which
+  posted the *actual* receivable at $1.00 and dumped the $0.42 difference
+  into a `Round Off` GL account. **Fix:** `disable_rounded_total: 1` on
+  the invoice, unconditionally — sub-dollar package prices are always
+  rounding-sensitive here.
+- **Payment Entry was redundant and posted the wrong amount.** The
+  invoice's own `payments` row (added to fix the "at least one mode of
+  payment" submit failure — see above) already fully settles an `is_pos:
+  1` invoice at submit time, exactly like the business's real retail
+  invoices (checked directly: `SINV-RET-2026-03750` and others have no
+  Payment Entry at all). The separate Payment Entry this integration also
+  created on top of that had two problems: for any package where the
+  (buggy) invoice total didn't happen to match `tx.amount` exactly, the
+  invoice was already either fully or over-settled by the `payments` row,
+  so the Payment Entry's allocation was rejected outright and the sync
+  failed permanently after already creating a submitted, fiscalised
+  invoice; and even when it didn't fail, it sent the USD `paid_amount`
+  straight into a ZWG cash account (`1110 - Cash - APLG`) with no
+  currency conversion, fabricating a Zimbabwe "Exchange Gain/Loss" GL
+  entry that didn't correspond to anything real. **Fix: the Payment
+  Entry step is removed entirely.** `createAndSubmitPaymentEntry()` no
+  longer exists; `transactions.erpnext_payment_entry_name` stays in the
+  schema (nullable) but is no longer set by new syncs — two real rows
+  from before this fix have one, everything after does not.
+- **Re-verified for real, twice, after the fix:** the `1gb` package
+  again (which had "passed" before, now for the right reason —
+  `grand_total` and `payments[0].amount` both exactly $0.50, no Round
+  Off, `outstanding_amount: 0`), and the `2gb` package (which was
+  guaranteed to fail under the old design's math) — both real, live
+  invoices confirmed with `grand_total` exactly matching `tx.amount`, no
+  rounding distortion, correctly settled, correctly fiscalised, no
+  Payment Entry.
+
 ## One-time ERPNext setup
 
 Nothing in this integration's *code* creates ERPNext records as setup —
@@ -294,8 +367,10 @@ recurring sync script's first real run:
 - **Custom Fields:** dropped from this integration entirely (see "Custom
   fields dropped" above). Nothing to do until the schema-sync follow-up.
 - **Modes of Payment:** `Paynow Ecocash` and `Paynow OneMoney` (Type:
-  `General`) must exist before the sync script's first real Payment Entry
-  create — created directly via the ERPNext UI (List view → New), a plain
+  `General`) must exist before the sync script's first real invoice
+  submit (they're what the invoice's own `payments` row names — see "Tax
+  and settlement correction" above) — created directly via the ERPNext
+  UI (List view → New), a plain
   record insert with no schema-sync complication, unlike Custom Field.
 
 There is no `scripts/setup-erpnext.js` in this design — there is nothing
@@ -311,8 +386,8 @@ each exported function so `MOCK_MODE=true` needs no real ERPNext reachable):
 
 ```javascript
 export async function getLatestExchangeRate(from, to) { ... }
+export async function getItemByCode(itemCode) { ... }
 export async function createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB, method }) { ... }
-export async function createAndSubmitPaymentEntry({ invoiceName, amount, method, reference }) { ... }
 ```
 
 `findInvoiceByTransactionRef` — present in an earlier draft of this
@@ -321,6 +396,12 @@ dropped along with the 3 custom fields it depended on (it queried
 `website_transaction_id`, a field that no longer exists in this design).
 It is removed from the module rather than left dead: reintroducing it is
 part of the same follow-up that re-adds the custom fields.
+
+`createAndSubmitPaymentEntry` — present from Task 5 through Task 10's
+first pass — is also removed, for an unrelated reason: see "Tax and
+settlement correction" above. The invoice's own `payments` row is now the
+only settlement mechanism; a separate Payment Entry duplicated and
+conflicted with it.
 
 Auth: `Authorization: token <ERPNEXT_API_KEY>:<ERPNEXT_API_SECRET>` header,
 built once from `config.erpnext`, matching how `config.omada` already
@@ -429,17 +510,49 @@ established throughout its history):
    by a genuine sale, left for the business to void/journal out once
    Paynow approves live mode and a real-money test can replace it as the
    permanent record, if they choose to.
+
+   **Then superseded by "Tax and settlement correction" above:** a
+   whole-branch review after all this was done found the invoice's GL
+   entries were wrong in a way this single `1gb`-package test couldn't
+   have shown (additive tax invoicing more than was collected, a
+   whole-dollar rounding distortion, and a redundant/wrongly-converted
+   Payment Entry) — real for `1gb` too, just coincidentally invisible at
+   that price point. Fixed and **re-verified for real, twice more**: the
+   `1gb` package again (now correct for the right reason, not by
+   coincidence) and the `2gb` package (`SINV-RET-2026-03754`, which was
+   mathematically guaranteed to fail under the old design) — both with
+   `grand_total` exactly matching `tx.amount`, `outstanding_amount: 0`,
+   no Round Off distortion, no Payment Entry.
 4. Duplicate-webhook simulation: mark the same transaction pending twice
    in a row (simulating Paynow's callback firing twice) and run the sync
    script twice — confirm exactly one invoice, no duplicate. (This
    exercises only the local `erpnext_invoice_name` idempotency check, per
    the "Custom fields dropped" note above — there is no ERPNext-side
-   cross-check in this design.)
+   cross-check in this design.) **Done in mock mode during Task 7.** A
+   second, real-world variant of this same risk was found and fixed by
+   the whole-branch review: a genuine repeated Paynow result callback
+   (not a webhook double-fire, but Paynow's own retry behavior) calling
+   `finalizePaidTransaction()` again for an already-synced transaction
+   would previously reset `erpnext_sync_status` back to `pending`
+   forever, even though the local idempotency check would still correctly
+   prevent a duplicate invoice — just with the dashboard now permanently,
+   incorrectly showing "Pending". Fixed with an `erpnext_invoice_name IS
+   NULL` guard on that UPDATE (see "Sync flow" above); verified for real
+   against a synthetic already-synced row (0 rows changed, status
+   untouched).
 5. A transaction with a legacy `package_id` — confirm it's marked
-   `not_required`, not retried, no invoice.
+   `not_required`, not retried, no invoice. **Done** (Task 7, mock mode).
 6. Simulate ERPNext unreachable (wrong `ERPNEXT_BASE_URL` temporarily) —
    confirm the transaction is marked `failed` with a real error message,
    `erpnext_sync_attempts` increments, and — critically — the customer's
    WiFi access and voucher were already granted before this, unaffected.
+   **Done for real, 2026-09-11** (Task 10 Step 8): a second real Paynow
+   test-mode purchase went through and issued a real voucher while
+   `ERPNEXT_BASE_URL` pointed at an invalid host; the sync attempt failed
+   cleanly (`erpnext_sync_error: 'fetch failed'`) with the voucher/status
+   completely unaffected; restoring the real URL let the very next sync
+   run recover automatically with no manual intervention.
 7. Confirm the admin Revenue page's new ERP Sync column renders correctly
    for success/failed/pending/not_required/never-attempted states.
+   **Done** — confirmed against the live production admin page with both
+   real end-to-end test transactions rendering "Synced".

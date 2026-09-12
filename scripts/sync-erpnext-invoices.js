@@ -3,7 +3,6 @@ import { getPackage } from '../src/packages.js';
 import {
   getItemByCode,
   createAndSubmitInvoice,
-  createAndSubmitPaymentEntry,
 } from '../src/services/erpnext.js';
 
 // Backoff schedule by attempt count (minutes before the next retry is eligible).
@@ -98,6 +97,11 @@ async function syncOne(tx) {
       throw new Error(`Item ${itemCode} does not exist in ERPNext — this integration never creates Items, so this means the Item was renamed or removed on the ERPNext side; fix the mapping or the Item, don't create a replacement here`);
     }
 
+    // Settlement is the invoice's own `payments` row (declared inside
+    // createAndSubmitInvoice) — there is no separate Payment Entry step.
+    // An earlier version also created one; dropped after a real GL
+    // inspection found it fighting the `payments` row for settlement (see
+    // erpnext.js's comment where createAndSubmitPaymentEntry used to be).
     const invoiceName = await createAndSubmitInvoice({
       reference: tx.reference,
       packageId: tx.package_id,
@@ -107,23 +111,15 @@ async function syncOne(tx) {
       method: tx.method,
     });
 
-    const paymentEntryName = await createAndSubmitPaymentEntry({
-      invoiceName,
-      amount: tx.amount,
-      method: tx.method,
-      reference: tx.reference,
-    });
-
     db.prepare(
       `UPDATE transactions SET
          erpnext_customer='CASH USD',
          erpnext_invoice_name=?,
-         erpnext_payment_entry_name=?,
          erpnext_sync_status='success',
          erpnext_synced_at=datetime('now'),
          updated_at=datetime('now')
        WHERE id=?`
-    ).run(invoiceName, paymentEntryName, tx.id);
+    ).run(invoiceName, tx.id);
     return 'success';
   } catch (err) {
     db.prepare(

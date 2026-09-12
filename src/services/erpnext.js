@@ -87,6 +87,13 @@ const COMPANY = 'Africom Private Ltd ZiG';
 const CUSTOMER = 'CASH USD';
 const TAX_TEMPLATE = 'Zimbabwe Tax - APLG';
 const POS_PROFILE = 'Contact Centre';
+// 'Zimbabwe Tax - APLG' is 15.5%, "On Net Total", included_in_print_rate: 0
+// — i.e. ADDITIVE, confirmed via a real GET against the live template.
+// The item rate must therefore be the net (pre-tax) amount, not the amount
+// the customer actually paid, or ERPNext invoices MORE than was collected
+// (a real, confirmed bug: a $0.50 sale was invoiced at $0.58). See
+// createAndSubmitInvoice's netRateForGrandTotal() below.
+const TAX_RATE_PERCENT = 15.5;
 // Exact ERPNext document names — Frappe's GET /api/resource/<doctype>/<name>
 // is an exact-match lookup, so these must match the real records verbatim.
 // The real record is "Paynow Ecocash" (lowercase after "Eco"), confirmed
@@ -118,14 +125,25 @@ const MODE_OF_PAYMENT = {
  *
  * `method` (`'ecocash'`/`'onemoney'`) is required because `is_pos: 1`
  * invoices need their own `payments` child-table row declaring which mode
- * of payment was used at point of sale — this is separate from, and in
- * addition to, the Payment Entry created afterward by
- * `createAndSubmitPaymentEntry()`. Found via a real submit failure:
- * "At least one mode of payment is required for POS invoice." Uses the
- * same `MODE_OF_PAYMENT` mapping as the Payment Entry step, so the mode
- * named on the invoice always matches the mode used for the actual
- * payment.
+ * of payment was used at point of sale, found via a real submit failure:
+ * "At least one mode of payment is required for POS invoice." This
+ * `payments` row is now the ONLY settlement mechanism for these invoices
+ * (an earlier version also created a separate Payment Entry — dropped,
+ * see `createAndSubmitPaymentEntry`'s doc comment for why).
+ *
+ * The invoice is created with `disable_rounded_total: 1` and an item
+ * `rate` computed so `grand_total` lands on the amount the customer
+ * actually paid (`amount`), not on `amount` itself — see
+ * `netRateForGrandTotal()`. Without this, the additive tax template
+ * invoices MORE than was collected, and ERPNext's default whole-currency
+ * rounding then distorts it further with a Round Off GL entry — both
+ * confirmed as real bugs via a live GL inspection of the first real test
+ * invoice (grand_total $0.58 and a $0.42 Round Off entry on a $0.50 sale).
  */
+function netRateForGrandTotal(amount) {
+  return Math.round((amount / (1 + TAX_RATE_PERCENT / 100)) * 100) / 100;
+}
+
 export async function createAndSubmitInvoice({ reference, packageId, itemCode, amount, dataGB, method }) {
   if (config.mockMode) {
     console.log(`[MOCK] ERPNext create+submit invoice: ref=${reference} item=${itemCode} amount=${amount} method=${method}`);
@@ -134,6 +152,7 @@ export async function createAndSubmitInvoice({ reference, packageId, itemCode, a
 
   const { rate } = await getLatestExchangeRate('USD', 'ZWG');
   const modeOfPayment = MODE_OF_PAYMENT[method] || MODE_OF_PAYMENT.ecocash;
+  const netRate = netRateForGrandTotal(amount);
 
   const draft = await erpRequest('POST', '/api/resource/Sales Invoice', {
     naming_series: 'SINV-RET-.YYYY.-',
@@ -144,12 +163,13 @@ export async function createAndSubmitInvoice({ reference, packageId, itemCode, a
     is_pos: 1,
     pos_profile: POS_PROFILE,
     custom_fiscalise: 1,
+    disable_rounded_total: 1,
     taxes_and_charges: TAX_TEMPLATE,
     items: [
       {
         item_code: itemCode,
         qty: 1,
-        rate: amount,
+        rate: netRate,
       },
     ],
     payments: [
@@ -172,68 +192,19 @@ export async function createAndSubmitInvoice({ reference, packageId, itemCode, a
   return invoiceName;
 }
 
-/**
- * Creates and submits a Payment Entry against an already-submitted Sales
- * Invoice, marking it paid. `paid_to` (which GL account the money lands in)
- * is intentionally NOT hardcoded here — it's read from the Mode of
- * Payment's own account mapping for this company, which Finance configures
- * directly in ERPNext (Mode of Payment is created manually, once, via the
- * ERPNext UI — the integration user has no Create permission on it and
- * there is no setup script). If that mapping is missing, this throws a
- * clear, actionable error rather than guessing an account.
- */
-export async function createAndSubmitPaymentEntry({ invoiceName, amount, method, reference }) {
-  const modeOfPayment = MODE_OF_PAYMENT[method] || MODE_OF_PAYMENT.ecocash;
-
-  if (config.mockMode) {
-    console.log(`[MOCK] ERPNext create+submit payment entry: invoice=${invoiceName} mode=${modeOfPayment} amount=${amount}`);
-    return `MOCK-PE-${reference}`;
-  }
-
-  const modeDoc = await erpRequest('GET', `/api/resource/Mode of Payment/${encodeURIComponent(modeOfPayment)}?fields=["name","accounts"]`);
-  const accountRow = (modeDoc?.data?.accounts || []).find((a) => a.company === COMPANY);
-  if (!accountRow || !accountRow.default_account) {
-    throw new Error(
-      `Mode of Payment "${modeOfPayment}" has no default account configured for company "${COMPANY}" — ` +
-      `configure this in ERPNext (Mode of Payment > Accounts) before Payment Entries can be created.`
-    );
-  }
-
-  const invoiceDoc = await erpRequest('GET', `/api/resource/Sales Invoice/${encodeURIComponent(invoiceName)}?fields=["debit_to"]`);
-  const receivableAccount = invoiceDoc?.data?.debit_to;
-  if (!receivableAccount) {
-    throw new Error(`Could not read receivable account (debit_to) from invoice ${invoiceName}`);
-  }
-
-  const draft = await erpRequest('POST', '/api/resource/Payment Entry', {
-    payment_type: 'Receive',
-    party_type: 'Customer',
-    party: CUSTOMER,
-    company: COMPANY,
-    mode_of_payment: modeOfPayment,
-    paid_from: receivableAccount,
-    paid_to: accountRow.default_account,
-    paid_amount: amount,
-    received_amount: amount,
-    reference_no: reference,
-    reference_date: new Date().toISOString().slice(0, 10),
-    references: [
-      {
-        reference_doctype: 'Sales Invoice',
-        reference_name: invoiceName,
-        allocated_amount: amount,
-      },
-    ],
-  });
-
-  const peName = draft?.data?.name;
-  if (!peName) {
-    throw new Error(`ERPNext Payment Entry creation returned no name for invoice ${invoiceName}`);
-  }
-
-  await erpRequest('PUT', `/api/resource/Payment Entry/${encodeURIComponent(peName)}`, {
-    docstatus: 1,
-  });
-
-  return peName;
-}
+// createAndSubmitPaymentEntry() was removed here (post-Task-10 whole-branch
+// review). It created a separate Payment Entry against the invoice on top
+// of the `payments` row `createAndSubmitInvoice()` already declares — the
+// two settlement mechanisms fought each other for anything but the `1gb`
+// package's $0.50 (where the numbers happened to coincide): a real GL
+// inspection found the PE posted the USD `amount` straight into a ZWG cash
+// account with no currency conversion, fabricating an "Exchange Gain/Loss"
+// entry, and for every other package the invoice was already fully settled
+// by the `payments` row, so the PE's allocation was rejected outright,
+// leaving the transaction permanently `failed` after invoice submission.
+// This matches the business's own real retail invoices (e.g.
+// SINV-RET-2026-03750), none of which have a Payment Entry — the POS
+// `payments` row is ERPNext's own intended settlement path for is_pos:1
+// invoices. `erpnext_payment_entry_name` stays in the transactions schema
+// (nullable, unused going forward) rather than being migrated away, since
+// the two real test transactions from before this fix genuinely have one.
