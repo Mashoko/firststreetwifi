@@ -206,18 +206,25 @@ their laptop before the Omada authorize call completed):
 ```javascript
 db.prepare(
   `UPDATE transactions SET erpnext_sync_status='pending', updated_at=datetime('now')
-   WHERE id=? AND erpnext_invoice_name IS NULL`
+   WHERE id=? AND erpnext_invoice_name IS NULL AND erpnext_sync_status IS NOT 'processing'`
 ).run(tx.id);
 ```
 
 That's the entire change to the existing request path. Everything else
-lives in the new sync script. The `erpnext_invoice_name IS NULL` guard
-(added after the whole-branch review, not in the original design) matters
-because Paynow can and does resend its result callback for the same
-transaction — without it, a repeat callback arriving after a successful
-sync would reset an already-synced row back to `pending` forever (the
-sync script's own idempotency check would then skip it every run without
-ever correcting the status).
+lives in the new sync script. Neither guard clause was in the original
+design — both were added after real bugs surfaced from Paynow resending
+its result callback for the same transaction (confirmed: Paynow does
+this):
+- `erpnext_invoice_name IS NULL` (whole-branch review): without it, a
+  repeat callback arriving after a successful sync would reset an
+  already-synced row back to `pending` forever (the sync script's own
+  idempotency check would then skip it every run without ever correcting
+  the status).
+- `erpnext_sync_status IS NOT 'processing'` (that fix's own scoped
+  re-review): the first guard alone left one window open — a repeat
+  callback landing *while* a sync run currently holds the row (invoice
+  name still `NULL` at that point) would still flip it back to `pending`,
+  making it claimable again by the sync script's own atomic claim.
 
 **`scripts/sync-erpnext-invoices.js`** (new file, run via cron, e.g. every 3
 minutes):
@@ -345,14 +352,16 @@ failed or misbooked every other package:
   longer exists; `transactions.erpnext_payment_entry_name` stays in the
   schema (nullable) but is no longer set by new syncs — two real rows
   from before this fix have one, everything after does not.
-- **Re-verified for real, twice, after the fix:** the `1gb` package
-  again (which had "passed" before, now for the right reason —
-  `grand_total` and `payments[0].amount` both exactly $0.50, no Round
-  Off, `outstanding_amount: 0`), and the `2gb` package (which was
-  guaranteed to fail under the old design's math) — both real, live
-  invoices confirmed with `grand_total` exactly matching `tx.amount`, no
-  rounding distortion, correctly settled, correctly fiscalised, no
-  Payment Entry.
+- **Re-verified for real, twice, after the fix** (the first "twice" claim
+  here was wrong — see the Testing section's correction below for how
+  that was caught and fixed): the `2gb` package (`SINV-RET-2026-03754`,
+  mathematically guaranteed to fail under the old design's math), and —
+  once a mistakenly-skipped test was actually run — the `1gb` package
+  (`SINV-RET-2026-03766`, which had "passed" before, now for the right
+  reason: `grand_total` and `payments[0].amount` both exactly $0.50, no
+  Round Off, `outstanding_amount: 0`). Both real, live invoices confirmed
+  with `grand_total` exactly matching `tx.amount`, no rounding
+  distortion, correctly settled, correctly fiscalised, no Payment Entry.
 
 ## One-time ERPNext setup
 
@@ -517,29 +526,50 @@ established throughout its history):
    have shown (additive tax invoicing more than was collected, a
    whole-dollar rounding distortion, and a redundant/wrongly-converted
    Payment Entry) — real for `1gb` too, just coincidentally invisible at
-   that price point. Fixed and **re-verified for real, twice more**: the
-   `1gb` package again (now correct for the right reason, not by
-   coincidence) and the `2gb` package (`SINV-RET-2026-03754`, which was
-   mathematically guaranteed to fail under the old design) — both with
-   `grand_total` exactly matching `tx.amount`, `outstanding_amount: 0`,
-   no Round Off distortion, no Payment Entry.
+   that price point. Fixed and re-verified for real against the `2gb`
+   package (`SINV-RET-2026-03754`, which was mathematically guaranteed to
+   fail under the old design): `grand_total` exactly matching `tx.amount`,
+   `outstanding_amount: 0`, no Round Off distortion, no Payment Entry.
+
+   **A `1gb` re-test was claimed at this point but had NOT actually been
+   run** — a scoped re-review of the fix caught this by independently
+   checking the live instance: the invoice cited as the re-test
+   (`SINV-RET-2026-03753`) was in fact a pre-fix run from before the
+   whole-branch review, still carrying the old bug's numbers
+   (`grand_total: 0.58`, a Payment Entry, no `disable_rounded_total`).
+   The code was correct regardless (confirmed independently by the
+   re-reviewer's own arithmetic and by the real `2gb` result), but the
+   record was wrong. **Corrected by actually running the missing test**:
+   `SINV-RET-2026-03766`, a genuine post-fix `1gb` purchase — `net_total:
+   0.43`, `total_taxes_and_charges: 0.07`, `grand_total: 0.5` exactly,
+   `rounded_total: 0`, `rounding_adjustment: 0`, `outstanding_amount: 0`,
+   `payments: [{mode_of_payment: "Paynow Ecocash", amount: 0.5}]`, no
+   Payment Entry, real ZIMRA fiscalisation intact.
 4. Duplicate-webhook simulation: mark the same transaction pending twice
    in a row (simulating Paynow's callback firing twice) and run the sync
    script twice — confirm exactly one invoice, no duplicate. (This
    exercises only the local `erpnext_invoice_name` idempotency check, per
    the "Custom fields dropped" note above — there is no ERPNext-side
-   cross-check in this design.) **Done in mock mode during Task 7.** A
-   second, real-world variant of this same risk was found and fixed by
-   the whole-branch review: a genuine repeated Paynow result callback
-   (not a webhook double-fire, but Paynow's own retry behavior) calling
-   `finalizePaidTransaction()` again for an already-synced transaction
-   would previously reset `erpnext_sync_status` back to `pending`
-   forever, even though the local idempotency check would still correctly
-   prevent a duplicate invoice — just with the dashboard now permanently,
-   incorrectly showing "Pending". Fixed with an `erpnext_invoice_name IS
-   NULL` guard on that UPDATE (see "Sync flow" above); verified for real
-   against a synthetic already-synced row (0 rows changed, status
-   untouched).
+   cross-check in this design.) **Done in mock mode during Task 7.** Two
+   further real-world variants of this same risk were found (whole-branch
+   review, then its own scoped re-review) and fixed:
+   - A genuine repeated Paynow result callback (not a webhook double-fire,
+     but Paynow's own retry behavior) calling `finalizePaidTransaction()`
+     again for an already-synced transaction would previously reset
+     `erpnext_sync_status` back to `pending` forever — local idempotency
+     would still prevent a duplicate invoice, but the dashboard would show
+     "Pending" permanently for a transaction with a real invoice.
+   - The first fix for that (`erpnext_invoice_name IS NULL`) left one
+     window open: a repeat callback landing *while* a sync run currently
+     holds the row (`erpnext_sync_status='processing'`, invoice name still
+     `NULL` at that point) would still flip it back to `pending`, making
+     it claimable again by the sync script's own atomic claim — two
+     "runs" racing each other could then both create an invoice.
+   - Fixed with `erpnext_invoice_name IS NULL AND erpnext_sync_status IS
+     NOT 'processing'` on that UPDATE (see "Sync flow" above); verified
+     for real against all 4 relevant states (a brand-new NULL-status
+     transaction, a `processing` one, a `success` one, a `failed` one) —
+     only the NULL and `failed` cases correctly get reset to `pending`.
 5. A transaction with a legacy `package_id` — confirm it's marked
    `not_required`, not retried, no invoice. **Done** (Task 7, mock mode).
 6. Simulate ERPNext unreachable (wrong `ERPNEXT_BASE_URL` temporarily) —
