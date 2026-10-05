@@ -34,7 +34,7 @@
     <div class="card center" id="failed" style="display:none">
       <div class="big-icon">⚠️</div>
       <h2>Payment not completed</h2>
-      <p class="lead msg-err">We couldn't confirm your payment. No charge was made.</p>
+      <p class="lead msg-err" id="failedMsg">We couldn't confirm your payment. No charge was made.</p>
       <a href="/" class="btn" style="text-decoration:none;margin-top:10px">Try again</a>
     </div>
   </div>
@@ -43,6 +43,12 @@
     const reference = <%- JSON.stringify(reference) %>;
     let attempts = 0;
     const maxAttempts = 40; // ~2 minutes at 3s
+
+    function showFailed(message) {
+      document.getElementById('pending').style.display = 'none';
+      if (message) document.getElementById('failedMsg').textContent = message;
+      document.getElementById('failed').style.display = 'block';
+    }
 
     async function poll() {
       attempts++;
@@ -57,11 +63,14 @@
           document.getElementById('done').style.display = 'block';
           return;
         }
+        if (data.status === 'failed') {
+          showFailed(data.message);
+          return;
+        }
       } catch (e) { /* keep polling */ }
 
       if (attempts >= maxAttempts) {
-        document.getElementById('pending').style.display = 'none';
-        document.getElementById('failed').style.display = 'block';
+        showFailed();
         return;
       }
       setTimeout(poll, 3000);

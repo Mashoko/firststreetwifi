@@ -76,6 +76,12 @@ export async function pollPayment(pollUrl) {
     return { paid: true, status: 'Paid', mock: true };
   }
   const paynow = await getPaynow();
+  // The SDK's pollTransaction() runs the response through its init-response
+  // parser, so it returns an InitResponse (no paid() method — calling it
+  // threw "status.paid is not a function" on every poll). The parser still
+  // verifies the hash before returning, and InitResponse lowercases status,
+  // so compare the status string directly.
   const status = await paynow.pollTransaction(pollUrl);
-  return { paid: status.paid(), status: status.status };
+  const statusText = String(status?.status || '').toLowerCase();
+  return { paid: statusText === 'paid', status: status?.status };
 }

@@ -65,6 +65,21 @@ async function finalizePaidTransaction(tx) {
   return voucherCode;
 }
 
+// Paynow statuses that mean the payment will never complete.
+const TERMINAL_FAILURE = new Set(['cancelled', 'failed']);
+
+// Customer-facing text for each way a payment can end without succeeding.
+function failureMessage(reason) {
+  switch (String(reason || '').toLowerCase()) {
+    case 'cancelled':
+      return 'You cancelled the payment on your phone. No charge was made.';
+    case 'failed':
+      return 'The payment could not be completed (for example, insufficient funds). No charge was made.';
+    default:
+      return "We couldn't confirm your payment. No charge was made.";
+  }
+}
+
 // AJAX endpoint the "waiting" page polls every few seconds.
 payRouter.get('/status/:reference', async (req, res) => {
   const tx = db.prepare('SELECT * FROM transactions WHERE reference = ?').get(req.params.reference);
@@ -75,12 +90,23 @@ payRouter.get('/status/:reference', async (req, res) => {
     return res.json({ status: 'paid', voucher: tx.voucher_code, dataGB: paidPkg?.dataGB, name: paidPkg?.name });
   }
 
+  // Already known to have failed (set below on an earlier poll).
+  if (tx.status === 'failed') {
+    return res.json({ status: 'failed', message: failureMessage() });
+  }
+
   try {
     const result = await pollPayment(tx.poll_url);
     if (result.paid) {
       const voucher = await finalizePaidTransaction(tx);
       const paidPkg = getPackage(tx.package_id);
       return res.json({ status: 'paid', voucher, dataGB: paidPkg?.dataGB, name: paidPkg?.name });
+    }
+    const paynowStatus = String(result.status || '').toLowerCase();
+    if (TERMINAL_FAILURE.has(paynowStatus)) {
+      db.prepare(`UPDATE transactions SET status='failed', updated_at=datetime('now') WHERE id=? AND status <> 'paid'`)
+        .run(tx.id);
+      return res.json({ status: 'failed', message: failureMessage(paynowStatus) });
     }
     return res.json({ status: 'pending', paynowStatus: result.status });
   } catch (err) {
